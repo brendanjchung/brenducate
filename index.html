@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentPulse Ops | Autonomous AI Agent Telemetry & Cost Sentinel</title>
+  <meta name="description" content="Production observability, prompt drift detection, and automated circuit-breaker guardrails for LLM agents. Protect your AI budget and maintain reliability.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-dark">
+  <!-- Top Banner / Live Alert Indicator -->
+  <aside class="announcement-bar" id="announcementBar" role="region" aria-label="System status alert">
+    <div class="announcement-content">
+      <span class="pulse-indicator-dot"></span>
+      <span class="announcement-text"><strong>Sentinel Live:</strong> 12 running agents monitored. Zero runaway recursion detected in the last 4 hours.</span>
+      <span class="mrr-badge" title="Target: $10,000 MRR (100 teams @ $99/mo)">Goal: $10k/mo MRR • 64/100 Teams Active</span>
+    </div>
+    <button class="banner-close-btn" id="dismissBannerBtn" aria-label="Dismiss banner">&times;</button>
+  </aside>
+
+  <!-- Main Navigation Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-block">
+        <div class="brand-logo-wrap">
+          <img src="assets/logo.jpg" alt="AgentPulse Logo" class="brand-logo-img" width="38" height="38">
+          <div class="logo-glow"></div>
+        </div>
+        <div class="brand-text">
+          <h1 class="brand-title">AgentPulse<span class="brand-accent">Ops</span></h1>
+          <span class="brand-tagline">LLM Telemetry & Drift Sentinel</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-links" aria-label="Main Navigation">
+        <button class="nav-tab active" data-tab="dashboard" id="tab-dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+          Telemetry
+        </button>
+        <button class="nav-tab" data-tab="simulator" id="tab-simulator">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Live Agent Sandbox
+        </button>
+        <button class="nav-tab" data-tab="drift" id="tab-drift">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+          Drift & Regression
+        </button>
+        <button class="nav-tab" data-tab="guardrails" id="tab-guardrails">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Circuit Breakers
+        </button>
+        <button class="nav-tab" data-tab="integrations" id="tab-integrations">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          SDK & API
+        </button>
+        <button class="nav-tab highlight" data-tab="pricing" id="tab-pricing">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path><path d="M12 18V6"></path></svg>
+          Pricing ($10k Goal)
+        </button>
+      </nav>
+
+      <!-- User & Quick Actions -->
+      <div class="header-actions">
+        <div class="env-selector">
+          <span class="env-dot"></span>
+          <select id="environmentSelect" aria-label="Environment select">
+            <option value="prod">Production (us-east-1)</option>
+            <option value="staging">Staging (eu-central)</option>
+            <option value="dev">Dev Sandbox</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="exportReportBtn" title="Download Executive Token & Drift Audit">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Export Report
+        </button>
+        <button class="btn btn-primary btn-sm upgrade-btn" id="upgradePlanBtn">
+          Upgrade to Pro
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content" id="mainContent">
+    <!-- TAB 1: TELEMETRY DASHBOARD -->
+    <section class="tab-pane active" id="pane-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+      <!-- KPI Metric Cards Grid -->
+      <div class="metrics-grid">
+        <article class="metric-card">
+          <div class="metric-header">
+            <span class="metric-label">Active Monitored Agents</span>
+            <span class="metric-badge success">+18% this wk</span>
+          </div>
+          <div class="metric-value-wrap">
+            <span class="metric-number" id="metricActiveAgents">24</span>
+            <span class="metric-sub">/ 50 limit</span>
+          </div>
+          <div class="metric-footer">
+            <span class="metric-foot-label">Autonomous loops active:</span>
+            <strong class="text-emerald">3 Live</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-header">
+            <span class="metric-label">24h Token Spend</span>
+            <span class="metric-badge warning">74% of budget</span>
+          </div>
+          <div class="metric-value-wrap">
+            <span class="metric-number" id="metricTokenSpend">$412.85</span>
+            <span class="metric-sub">est. $12.4k/mo</span>
+          </div>
+          <div class="metric-footer">
+            <span class="metric-foot-label">Saved by Circuit Breaker:</span>
+            <strong class="text-indigo">+$1,420.00</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-header">
+            <span class="metric-label">Prompt Drift Index</span>
+            <span class="metric-badge success">Optimal</span>
+          </div>
+          <div class="metric-value-wrap">
+            <span class="metric-number" id="metricDriftIndex">1.2%</span>
+            <span class="metric-sub">threshold: 8.5%</span>
+          </div>
+          <div class="metric-footer">
+            <span class="metric-foot-label">Semantic Cosine:</span>
+            <strong class="text-emerald">0.988 / 1.00</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-header">
+            <span class="metric-label">Anomalies Intercepted</span>
+            <span class="metric-badge danger">Auto-Killed</span>
+          </div>
+          <div class="metric-value-wrap">
+            <span class="metric-number" id="metricAnomalies">9</span>
+            <span class="metric-sub">runs aborted</span>
+          </div>
+          <div class="metric-footer">
+            <span class="metric-foot-label">Prevented loops:</span>
+            <strong class="text-rose">6 infinite recursion</strong>
+          </div>
+        </article>
+
+        <article class="metric-card">
+          <div class="metric-header">
+            <span class="metric-label">p95 Multi-Hop Latency</span>
+            <span class="metric-badge success">-240ms</span>
+          </div>
+          <div class="metric-value-wrap">
+            <span class="metric-number" id="metricLatency">1.28s</span>
+            <span class="metric-sub">avg tool time</span>
+          </div>
+          <div class="metric-footer">
+            <span class="metric-foot-label">Tool bottleneck:</span>
+            <strong class="text-slate">WebSearch (0.82s)</strong>
+          </div>
+        </article>
+      </div>
+
+      <!-- Live Telemetry Stream & Real-time Charts -->
+      <div class="dashboard-columns">
+        <!-- Left: Live Traces Feed -->
+        <div class="dashboard-panel traces-panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">Real-Time Agent Execution Traces</h2>
+              <span class="live-pill"><span class="pulse-dot"></span> Live Telemetry</span>
+            </div>
+            <div class="panel-filters">
+              <select id="filterAgentSelect" class="input-select-sm">
+                <option value="all">All Agents</option>
+                <option value="researcher">Financial Research Agent</option>
+                <option value="support">Customer Copilot</option>
+                <option value="sql">Autonomous SQL Analyst</option>
+                <option value="code">Code Review Sentinel</option>
+              </select>
+              <button class="btn btn-icon-only btn-sm" id="refreshTracesBtn" title="Refresh Traces">
+                <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="traces-list-container" id="tracesList">
+            <!-- Dynamically populated by app.js -->
+          </div>
+        </div>
+
+        <!-- Right: Cost & Latency Breakdown + Anomaly Sentinel Feed -->
+        <div class="dashboard-panel side-analytics-panel">
+          <div class="panel-header">
+            <h2 class="panel-title">Spend by Model & Provider</h2>
+            <span class="text-muted text-xs">Updated 2m ago</span>
+          </div>
+          
+          <div class="provider-breakdown">
+            <div class="provider-bar-item">
+              <div class="provider-info">
+                <span class="provider-name">Claude 3.7 Sonnet (Hybrid Reasoning)</span>
+                <span class="provider-cost">$245.10 (59%)</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-fill fill-indigo" style="width: 59%;"></div></div>
+            </div>
+            <div class="provider-bar-item">
+              <div class="provider-info">
+                <span class="provider-name">GPT-4o (Function Calling)</span>
+                <span class="provider-cost">$112.40 (27%)</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-fill fill-emerald" style="width: 27%;"></div></div>
+            </div>
+            <div class="provider-bar-item">
+              <div class="provider-info">
+                <span class="provider-name">Gemini 2.5 Pro (Multimodal Agent)</span>
+                <span class="provider-cost">$41.80 (10%)</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-fill fill-cyan" style="width: 10%;"></div></div>
+            </div>
+            <div class="provider-bar-item">
+              <div class="provider-info">
+                <span class="provider-name">Llama-3.3-70B (Local Self-Hosted)</span>
+                <span class="provider-cost">$13.55 (4%)</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-fill fill-purple" style="width: 4%;"></div></div>
+            </div>
+          </div>
+
+          <div class="panel-divider"></div>
+
+          <div class="panel-header">
+            <h2 class="panel-title">Active Sentinel Alerts</h2>
+            <span class="badge badge-warning">2 Warnings</span>
+          </div>
+          
+          <div class="alerts-feed" id="alertsFeed">
+            <div class="alert-item alert-rose">
+              <div class="alert-icon-box">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              </div>
+              <div class="alert-body">
+                <div class="alert-title">Recursive Loop Intercepted (#TR-9041)</div>
+                <div class="alert-desc">Agent 'SQL Analyst' reached step 7 with identical tool query. Circuit breaker auto-killed process. Saved ~$14.80.</div>
+                <div class="alert-meta">12 minutes ago • Automated Guardrail #1</div>
+              </div>
+            </div>
+
+            <div class="alert-item alert-amber">
+              <div class="alert-icon-box">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              </div>
+              <div class="alert-body">
+                <div class="alert-title">Prompt Drift Detected (#AG-104)</div>
+                <div class="alert-desc">Support Copilot semantic similarity dropped to 0.81 (Threshold: 0.90). Tone divergence detected.</div>
+                <div class="alert-meta">48 minutes ago • Prompt Sentinel</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: LIVE AGENT SIMULATOR & SANDBOX -->
+    <section class="tab-pane" id="pane-simulator" role="tabpanel" aria-labelledby="tab-simulator">
+      <div class="section-intro">
+        <h2>Autonomous Agent Simulator & Guardrail Tester</h2>
+        <p>Trigger simulated agent execution flows with live multi-step tool hops. Test circuit-breaker response to infinite loops, runaway token spend, and prompt drift in real time.</p>
+      </div>
+
+      <div class="simulator-layout">
+        <!-- Configuration Controls -->
+        <div class="simulator-config card">
+          <h3 class="card-title">1. Simulation Parameters</h3>
+          
+          <div class="form-group">
+            <label for="simAgentPreset">Agent Preset</label>
+            <select id="simAgentPreset" class="form-control">
+              <option value="market_research">Autonomous Financial Researcher (Multi-Hop Tool Calls)</option>
+              <option value="customer_support">Customer Resolution Copilot (PII & Tone Test)</option>
+              <option value="code_refactor">Autonomous Code Migration Agent (High Token Volume)</option>
+              <option value="custom">Custom Agent Prompt</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="simModel">Underlying Foundation Model</label>
+            <select id="simModel" class="form-control">
+              <option value="claude-3-7">Claude 3.7 Sonnet ($3.00 / 1M in, $15.00 / 1M out)</option>
+              <option value="gpt-4o">GPT-4o ($2.50 / 1M in, $10.00 / 1M out)</option>
+              <option value="gemini-2-5-pro">Gemini 2.5 Pro ($1.25 / 1M in, $5.00 / 1M out)</option>
+              <option value="llama-3-3">Llama 3.3 70B ($0.60 / 1M in, $1.80 / 1M out)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="simUserPrompt">User Objective / Task Prompt</label>
+            <textarea id="simUserPrompt" class="form-control" rows="3">Analyze Q3 semiconductor supply chain constraints, fetch 3 recent SEC 10-K filings, compare gross margins, and summarize risk factors into a formatted portfolio report.</textarea>
+          </div>
+
+          <div class="chaos-injection-box">
+            <div class="box-label">Inject Chaos / Failure Modes:</div>
+            <label class="toggle-control">
+              <input type="checkbox" id="chaosInfiniteLoop">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">Simulate Infinite Tool Loop (Rogue Tool Calling)</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="chaosDrift">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">Inject Prompt Drift / Hallucination Pattern</span>
+            </label>
+            <label class="toggle-control">
+              <input type="checkbox" id="chaosBudgetSpike">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">Force Massive Context Expansion (&gt;80k tokens)</span>
+            </label>
+          </div>
+
+          <div class="sim-actions">
+            <button class="btn btn-primary btn-block" id="startSimulationBtn">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              Execute Simulated Agent Run
+            </button>
+            <button class="btn btn-secondary btn-block" id="resetSimulationBtn" style="display: none;">
+              Reset Simulator
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Streaming Output & Step Execution Tree -->
+        <div class="simulator-feed card">
+          <div class="feed-header">
+            <h3 class="card-title">2. Live Execution Trace Stream</h3>
+            <div class="stream-status" id="streamStatus">
+              <span class="status-indicator ready"></span>
+              <span id="streamStatusText">Ready to execute</span>
+            </div>
+          </div>
+
+          <!-- Live Stats Header during run -->
+          <div class="live-stats-bar" id="liveStatsBar">
+            <div class="stat-pill">
+              <span class="stat-pill-label">Elapsed:</span>
+              <span class="stat-pill-val" id="liveElapsed">0.0s</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-label">Steps:</span>
+              <span class="stat-pill-val" id="liveStepCount">0</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-label">Tokens:</span>
+              <span class="stat-pill-val" id="liveTokens">0</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-label">Cost:</span>
+              <span class="stat-pill-val" id="liveCost">$0.0000</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-pill-label">Guardrail Status:</span>
+              <span class="stat-pill-val text-emerald" id="liveGuardrailStatus">SECURE</span>
+            </div>
+          </div>
+
+          <!-- Execution Hop Tree Container -->
+          <div class="execution-tree-container" id="executionTree">
+            <div class="empty-state" id="simEmptyState">
+              <div class="empty-icon">⚡</div>
+              <p>Click <strong>"Execute Simulated Agent Run"</strong> to observe step-by-step reasoning, tool invocations, token cost tracking, and circuit-breaker telemetry.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: DRIFT & REGRESSION SENTINEL -->
+    <section class="tab-pane" id="pane-drift" role="tabpanel" aria-labelledby="tab-drift">
+      <div class="section-intro">
+        <h2>Prompt Regression & Semantic Drift Sentinel</h2>
+        <p>Continuous evaluation of production agent responses against golden reference datasets. Catches behavioral drift before your customers notice.</p>
+      </div>
+
+      <div class="drift-dashboard">
+        <!-- Benchmark Selector -->
+        <div class="card drift-controls-card">
+          <div class="drift-top-row">
+            <div>
+              <label for="benchmarkDataset">Evaluation Benchmark Suite</label>
+              <select id="benchmarkDataset" class="form-control">
+                <option value="enterprise_qna">Enterprise Policy Q&A (50 Golden Cases)</option>
+                <option value="sql_accuracy">Text-to-SQL Precision Benchmark (120 Complex Queries)</option>
+                <option value="code_eval">Code Generation Safety & Typings (75 Scenarios)</option>
+              </select>
+            </div>
+            <div class="drift-actions">
+              <button class="btn btn-primary" id="runDriftAuditBtn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                Run Drift Audit
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Drift Metrics Comparison -->
+        <div class="drift-score-cards">
+          <div class="score-card">
+            <span class="score-label">Semantic Cosine Score</span>
+            <div class="score-val text-emerald">0.962 <span class="score-diff positive">+0.014</span></div>
+            <p class="score-desc">Baseline vs Production embedding distance. 0.90+ is healthy.</p>
+          </div>
+          <div class="score-card">
+            <span class="score-label">Hallucination Risk Score</span>
+            <div class="score-val text-indigo">1.8% <span class="score-diff negative">-0.4%</span></div>
+            <p class="score-desc">Entity cross-reference against trusted retrieval sources.</p>
+          </div>
+          <div class="score-card">
+            <span class="score-label">Format / JSON Compliance</span>
+            <div class="score-val text-emerald">99.4% <span class="score-diff positive">+0.2%</span></div>
+            <p class="score-desc">Valid schema adherence without output truncations.</p>
+          </div>
+          <div class="score-card">
+            <span class="score-label">Tone & Brand Adherence</span>
+            <div class="score-val text-amber">88.5% <span class="score-diff neutral">Review Needed</span></div>
+            <p class="score-desc">Sentiment & style stability compared to approved tone model.</p>
+          </div>
+        </div>
+
+        <!-- Side-by-Side Comparison Inspector -->
+        <div class="card diff-card">
+          <div class="card-header-flex">
+            <h3 class="card-title">Golden Baseline vs. Current Production Response</h3>
+            <span class="badge badge-warning">Test Case #B-194 (Tax Advice Copilot)</span>
+          </div>
+
+          <div class="diff-viewer-grid">
+            <div class="diff-pane">
+              <div class="diff-header golden">
+                <span>🌟 Golden Reference (Approved Oct 2026)</span>
+                <span class="text-xs">Passed 100% assertions</span>
+              </div>
+              <div class="diff-body">
+                <p><strong>Query:</strong> "Can an S-Corp pass through 179 deductions for equipment bought in Q3?"</p>
+                <div class="diff-quote golden-text">
+                  "Yes, under Section 179, an S-Corporation can elect to expense qualifying equipment up to the annual limit ($1,220,000 for 2024–2026), but the deduction cannot exceed the active business taxable income. The remainder passes through to shareholders on Form 1120-S Schedule K-1, Box 11."
+                </div>
+              </div>
+            </div>
+
+            <div class="diff-pane">
+              <div class="diff-header production">
+                <span>⚠️ Current Model Output (Drift Detected)</span>
+                <span class="text-xs text-rose">Missing income limitation caveat</span>
+              </div>
+              <div class="diff-body">
+                <p><strong>Query:</strong> "Can an S-Corp pass through 179 deductions for equipment bought in Q3?"</p>
+                <div class="diff-quote current-text">
+                  "Yes, S-Corporations can fully deduct Section 179 equipment purchases up to $1.2M on Schedule K-1. You can deduct 100% of the cost immediately without any taxable income ceiling limitations."
+                </div>
+                <div class="drift-alert-banner">
+                  <span class="drift-alert-tag">CRITICAL DRIFT:</span> Model hallucinated removal of the taxable income limitation. Alert dispatched to Slack #agent-ops.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: CIRCUIT BREAKERS & GUARDRAILS -->
+    <section class="tab-pane" id="pane-guardrails" role="tabpanel" aria-labelledby="tab-guardrails">
+      <div class="section-intro">
+        <h2>Autonomous Circuit Breakers & Budget Kill-Switches</h2>
+        <p>Hard boundaries for autonomous agents. If an agent loops recursively or spends more than your limit, AgentPulse kills the execution in &lt;10ms.</p>
+      </div>
+
+      <div class="guardrails-grid">
+        <!-- Rule 1: Max Tool Hops -->
+        <div class="rule-card">
+          <div class="rule-top">
+            <div class="rule-info">
+              <h3 class="rule-name">Infinite Recursion Kill-Switch</h3>
+              <p class="rule-desc">Aborts agent execution if tool hops exceed threshold without convergence.</p>
+            </div>
+            <label class="toggle-control">
+              <input type="checkbox" checked id="ruleRecursionToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="rule-config-row">
+            <label>Max Consecutive Hops:</label>
+            <input type="number" value="6" min="1" max="25" class="input-number-sm" id="ruleMaxHops">
+          </div>
+          <div class="rule-action-badge">Action: Instant Kill + Slack Alert</div>
+        </div>
+
+        <!-- Rule 2: Cost Per Execution Ceiling -->
+        <div class="rule-card">
+          <div class="rule-top">
+            <div class="rule-info">
+              <h3 class="rule-name">Single-Run Cost Ceiling</h3>
+              <p class="rule-desc">Prevents runaway token ingestion on unexpected massive inputs or huge files.</p>
+            </div>
+            <label class="toggle-control">
+              <input type="checkbox" checked id="ruleCostCeilingToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="rule-config-row">
+            <label>Max Cost / Execution ($):</label>
+            <input type="number" value="0.75" step="0.05" min="0.10" class="input-number-sm" id="ruleMaxCost">
+          </div>
+          <div class="rule-action-badge">Action: Terminate with fallback response</div>
+        </div>
+
+        <!-- Rule 3: Repetitive Output Loop Detector -->
+        <div class="rule-card">
+          <div class="rule-top">
+            <div class="rule-info">
+              <h3 class="rule-name">Repetitive Query Sentinel</h3>
+              <p class="rule-desc">Detects when agent repeats the exact same tool query with zero new parameters.</p>
+            </div>
+            <label class="toggle-control">
+              <input type="checkbox" checked id="ruleRepetitionToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="rule-config-row">
+            <label>Duplicate Tool Limit:</label>
+            <input type="number" value="2" min="1" max="5" class="input-number-sm" id="ruleMaxDupes">
+          </div>
+          <div class="rule-action-badge">Action: Force reflection prompt / Halt</div>
+        </div>
+
+        <!-- Rule 4: PII & Credential Leak Interceptor -->
+        <div class="rule-card">
+          <div class="rule-top">
+            <div class="rule-info">
+              <h3 class="rule-name">Secrets & PII Masker</h3>
+              <p class="rule-desc">Scans tool outputs for API keys, bearer tokens, SSNs, and credit cards before LLM ingestion.</p>
+            </div>
+            <label class="toggle-control">
+              <input type="checkbox" checked id="rulePiiToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="rule-config-row">
+            <label>Detection Sensitivity:</label>
+            <select class="input-select-sm" id="rulePiiSensitivity">
+              <option value="strict">Strict (Zero tolerance)</option>
+              <option value="moderate">Moderate</option>
+            </select>
+          </div>
+          <div class="rule-action-badge">Action: Redact in-memory `[REDACTED_SECRET]`</div>
+        </div>
+      </div>
+
+      <!-- Live Guardrail Activity Log -->
+      <div class="card mt-4">
+        <div class="card-header-flex">
+          <h3 class="card-title">Recent Circuit-Breaker Interceptions</h3>
+          <span class="badge badge-success">3 Interceptions today</span>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Agent Identifier</th>
+                <th>Triggered Guardrail</th>
+                <th>Action Taken</th>
+                <th>Tokens Saved</th>
+                <th>Cost Preserved</th>
+              </tr>
+            </thead>
+            <tbody id="guardrailLogsTable">
+              <tr>
+                <td>Just now</td>
+                <td><code>finance-research-bot</code></td>
+                <td><span class="badge badge-danger">Max Recursion (7 hops)</span></td>
+                <td>Aborted Execution</td>
+                <td>48,200 tokens</td>
+                <td class="text-emerald">+$0.72</td>
+              </tr>
+              <tr>
+                <td>1h 40m ago</td>
+                <td><code>sql-generator-agent</code></td>
+                <td><span class="badge badge-danger">Repetitive Tool Call</span></td>
+                <td>Halted &amp; Fallback</td>
+                <td>92,100 tokens</td>
+                <td class="text-emerald">+$1.38</td>
+              </tr>
+              <tr>
+                <td>3h 12m ago</td>
+                <td><code>customer-onboarding-v2</code></td>
+                <td><span class="badge badge-warning">PII Leak Intercept</span></td>
+                <td>Redacted In-Memory</td>
+                <td>Masked 2 API Keys</td>
+                <td class="text-indigo">Compliance Safe</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: SDK & INTEGRATION HUB -->
+    <section class="tab-pane" id="pane-integrations" role="tabpanel" aria-labelledby="tab-integrations">
+      <div class="section-intro">
+        <h2>1-Line SDK Drop-in & Webhook Integrations</h2>
+        <p>Integrate AgentPulse with any agent framework in under 2 minutes. Native wrappers for LangChain, LlamaIndex, CrewAI, AutoGen, and raw OpenAI / Anthropic clients.</p>
+      </div>
+
+      <div class="integrations-layout">
+        <!-- SDK Snippet -->
+        <div class="card sdk-card">
+          <div class="card-header-flex">
+            <div class="sdk-tabs">
+              <button class="sdk-tab active" data-lang="python">Python</button>
+              <button class="sdk-tab" data-lang="openai">OpenAI Auto-Wrap</button>
+              <button class="sdk-tab" data-lang="langchain">LangChain Handler</button>
+              <button class="sdk-tab" data-lang="typescript">TypeScript / Node</button>
+              <button class="sdk-tab" data-lang="curl">cURL / REST</button>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="copyCodeBtn">
+              <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              Copy Code
+            </button>
+          </div>
+
+          <pre class="code-block" id="sdkCodeDisplay"><code class="language-python"># pip install agentpulse-sdk
+from agentpulse import AgentPulse, CircuitBreaker
+
+# 1. Initialize sentinel with your telemetry key
+sentinel = AgentPulse(
+    api_key="ap_live_7x90e8c201a4e5f98",
+    environment="production"
+)
+
+# 2. Wrap your agent runner or LangChain / CrewAI executor
+@sentinel.monitor(
+    agent_id="financial-researcher",
+    circuit_breaker=CircuitBreaker(
+        max_hops=6,
+        max_cost_usd=0.50,
+        kill_on_infinite_loop=True
+    )
+)
+async def run_agent_workflow(user_goal: str):
+    # Your agent code runs untouched!
+    result = await my_custom_agent.execute(user_goal)
+    return result</code></pre>
+        </div>
+
+        <!-- API Keys & Webhook Dispatcher -->
+        <div class="card api-keys-card">
+          <h3 class="card-title">Production API Keys</h3>
+          <p class="text-muted text-sm">Send telemetry asynchronously via high-throughput HTTP edge endpoints.</p>
+          
+          <div class="form-group mt-3">
+            <label>Live API Secret Key</label>
+            <div class="input-with-button">
+              <input type="password" value="ap_live_9a7b2c4d6e8f01a3b5c7d9e1f2" class="form-control" id="apiKeyInput" readonly>
+              <button class="btn btn-secondary" id="toggleApiKeyVisibility">Reveal</button>
+              <button class="btn btn-primary" id="copyApiKeyBtn">Copy</button>
+            </div>
+          </div>
+
+          <div class="panel-divider"></div>
+
+          <h3 class="card-title">Alert Webhooks (Slack / Discord / PagerDuty)</h3>
+          <div class="form-group">
+            <label for="webhookUrl">Webhook URL</label>
+            <input type="url" id="webhookUrl" class="form-control" placeholder="https://hooks.slack.com/services/T00/B00/XXXX" value="https://hooks.slack.com/services/T04G/B08X/demo-alerts">
+          </div>
+          <div class="webhook-actions">
+            <button class="btn btn-secondary" id="testWebhookBtn">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              Send Test Alert Ping
+            </button>
+            <span class="text-xs text-muted" id="webhookStatusMsg"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: PRICING & $10k MRR BLUEPRINT -->
+    <section class="tab-pane" id="pane-pricing" role="tabpanel" aria-labelledby="tab-pricing">
+      <div class="pricing-hero">
+        <span class="badge badge-emerald">Micro-SaaS Revenue Architecture</span>
+        <h2 class="pricing-title">Predictable Pricing Built to Reach $10,000 / Month</h2>
+        <p class="pricing-subtitle">Transparent tiers tailored for AI engineering teams. 100 teams @ $99/mo or 40 teams @ $249/mo = $10,000 MRR ($120,000 ARR).</p>
+      </div>
+
+      <!-- Pricing Cards Grid -->
+      <div class="pricing-grid">
+        <!-- Tier 1: Starter -->
+        <div class="pricing-card">
+          <div class="pricing-card-header">
+            <h3 class="tier-name">Starter Sentinel</h3>
+            <p class="tier-desc">For indie hackers and early stage AI startups.</p>
+            <div class="tier-price"><span class="currency">$</span>49<span class="period">/mo</span></div>
+          </div>
+          <ul class="tier-features">
+            <li><span>✓</span> Up to 50,000 agent runs/mo</li>
+            <li><span>✓</span> 3 Autonomous Agent Monitors</li>
+            <li><span>✓</span> Token Spend & Cost Telemetry</li>
+            <li><span>✓</span> Basic Loop Kill-Switch</li>
+            <li><span>✓</span> 7-Day Trace History</li>
+            <li class="disabled"><span>✕</span> Real-Time Drift Sentinel</li>
+            <li class="disabled"><span>✕</span> Slack / Discord Webhooks</li>
+          </ul>
+          <button class="btn btn-secondary btn-block select-plan-btn" data-plan="starter">Get Started</button>
+          <div class="mrr-math-tag">Math: 200 users = $9,800/mo</div>
+        </div>
+
+        <!-- Tier 2: Pro (Recommended) -->
+        <div class="pricing-card featured">
+          <div class="featured-badge">MOST POPULAR • TARGET TIER</div>
+          <div class="pricing-card-header">
+            <h3 class="tier-name">Professional Ops</h3>
+            <p class="tier-desc">For teams running production LLM agents at scale.</p>
+            <div class="tier-price"><span class="currency">$</span>99<span class="period">/mo</span></div>
+          </div>
+          <ul class="tier-features">
+            <li><span>✓</span> Up to 500,000 agent runs/mo</li>
+            <li><span>✓</span> Unlimited Monitored Agents</li>
+            <li><span>✓</span> Real-Time Prompt Drift Detection</li>
+            <li><span>✓</span> Autonomous Circuit Breakers</li>
+            <li><span>✓</span> PII & Secret Redaction Guardrails</li>
+            <li><span>✓</span> 90-Day Trace History</li>
+            <li><span>✓</span> Slack, Discord & PagerDuty Alerts</li>
+          </ul>
+          <button class="btn btn-primary btn-block select-plan-btn" data-plan="pro">Start 14-Day Free Trial</button>
+          <div class="mrr-math-tag highlight">Math: 100 teams = $9,900/mo ($118k ARR)</div>
+        </div>
+
+        <!-- Tier 3: Scale / Enterprise -->
+        <div class="pricing-card">
+          <div class="pricing-card-header">
+            <h3 class="tier-name">Scale Sentinel</h3>
+            <p class="tier-desc">For high-throughput AI platforms and enterprises.</p>
+            <div class="tier-price"><span class="currency">$</span>249<span class="period">/mo</span></div>
+          </div>
+          <ul class="tier-features">
+            <li><span>✓</span> Up to 2,500,000 agent runs/mo</li>
+            <li><span>✓</span> Dedicated High-Speed Edge Collector</li>
+            <li><span>✓</span> Custom Semantic Drift Benchmark Suites</li>
+            <li><span>✓</span> Custom Regex & PII Redaction Engines</li>
+            <li><span>✓</span> Executive Compliance & Audit Reports</li>
+            <li><span>✓</span> Priority 24/7 SLA Support</li>
+            <li><span>✓</span> SSO / SAML & Team RBAC</li>
+          </ul>
+          <button class="btn btn-secondary btn-block select-plan-btn" data-plan="scale">Contact Sales</button>
+          <div class="mrr-math-tag">Math: 40 teams = $9,960/mo ($120k ARR)</div>
+        </div>
+      </div>
+
+      <!-- Micro-SaaS Business Calculator -->
+      <div class="card roi-calculator-card">
+        <h3 class="card-title">Token Waste & ROI Calculator</h3>
+        <p class="text-muted text-sm">See how much money AgentPulse saves an AI engineering team compared to rogue token loops.</p>
+        
+        <div class="calc-grid">
+          <div class="calc-input-col">
+            <div class="form-group">
+              <label for="calcAgentRuns">Monthly Agent Executions:</label>
+              <input type="range" id="calcAgentRuns" min="10000" max="500000" step="10000" value="120000">
+              <div class="range-value" id="calcAgentRunsVal">120,000 runs/month</div>
+            </div>
+            <div class="form-group">
+              <label for="calcAvgCost">Average Cost per Run ($):</label>
+              <input type="range" id="calcAvgCost" min="0.01" max="0.25" step="0.01" value="0.04">
+              <div class="range-value" id="calcAvgCostVal">$0.04 / run</div>
+            </div>
+            <div class="form-group">
+              <label for="calcLoopRate">Estimated Rogue Loop Rate (%):</label>
+              <input type="range" id="calcLoopRate" min="0.1" max="5.0" step="0.1" value="1.2">
+              <div class="range-value" id="calcLoopRateVal">1.2% runaway loops</div>
+            </div>
+          </div>
+
+          <div class="calc-result-col">
+            <div class="calc-result-box">
+              <span class="calc-result-label">Wasted Token Cost Prevented:</span>
+              <div class="calc-result-number text-emerald" id="calcSavedDollars">$1,728 / mo</div>
+              <p class="calc-result-sub">AgentPulse Pro ($99/mo) gives you a <strong>1,745% ROI</strong> on day one by intercepting runaway loops.</p>
+              <button class="btn btn-primary" id="calcUpgradeBtn">Lock in Your Savings</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: Upgrade / Checkout Dialog (Accessible Modern <dialog>) -->
+  <dialog id="checkoutDialog" class="modal-dialog" closedby="any">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2 class="modal-title" id="checkoutModalTitle">Upgrade to Professional Ops</h2>
+          <span class="badge badge-emerald">14-Day Free Trial</span>
+        </div>
+        <button class="modal-close-btn" id="closeCheckoutBtn" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-summary">Join 64 high-growth AI engineering teams actively protecting their agent fleets from token leaks and silent prompt drift.</p>
+        
+        <div class="plan-summary-box">
+          <div class="summary-line">
+            <span class="summary-plan-name" id="selectedPlanLabel">Professional Ops ($99/month)</span>
+            <span class="summary-plan-price" id="selectedPlanPrice">$99.00</span>
+          </div>
+          <div class="summary-line text-muted text-xs">
+            <span>Billed monthly • Cancel anytime with 1 click</span>
+            <span>$0.00 due today</span>
+          </div>
+        </div>
+
+        <form id="checkoutForm" class="checkout-form">
+          <div class="form-group">
+            <label for="companyName">Company / Organization</label>
+            <input type="text" id="companyName" class="form-control" placeholder="Acme AI Inc." required>
+          </div>
+          <div class="form-group">
+            <label for="billingEmail">Work Email</label>
+            <input type="email" id="billingEmail" class="form-control" placeholder="founder@acme.ai" required>
+          </div>
+          <div class="form-group">
+            <label for="cardDetails">Card Details (Simulated Stripe Elements)</label>
+            <div class="simulated-card-input">
+              <span class="card-icon">💳</span>
+              <input type="text" id="cardDetails" class="card-num" placeholder="4242 •••• •••• 4242" value="4242 •••• •••• 4242">
+              <input type="text" class="card-exp" placeholder="MM/YY" value="12/28">
+              <input type="text" class="card-cvc" placeholder="CVC" value="982">
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block btn-lg" id="submitPaymentBtn">
+            Activate Pro Sentinel ($99/mo)
+          </button>
+          <div class="secure-badge">
+            <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            256-bit SSL encrypted • Instant API activation
+          </div>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MODAL: Trace Details Deep Dive Dialog -->
+  <dialog id="traceModal" class="modal-dialog" closedby="any">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h2 class="modal-title" id="traceModalTitle">Execution Trace Deep Dive</h2>
+          <span class="badge badge-emerald" id="traceModalBadge">COMPLETED</span>
+        </div>
+        <button class="modal-close-btn" id="closeTraceBtn" aria-label="Close dialog">&times;</button>
+      </div>
+      <div class="modal-body" id="traceModalBody">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Notification Toast Container -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <!-- Scripts -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

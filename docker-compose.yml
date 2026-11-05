@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: agentpulse-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///./agentpulse.db
+      - FRONTEND_URL=http://localhost:3032
+      - ENVIRONMENT=production
+    volumes:
+      - agentpulse-data:/app
+    restart: unless-stopped
+
+  dashboard:
+    image: nginx:alpine
+    container_name: agentpulse-dashboard
+    ports:
+      - "3032:80"
+    volumes:
+      - .:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+volumes:
+  agentpulse-data:
+
