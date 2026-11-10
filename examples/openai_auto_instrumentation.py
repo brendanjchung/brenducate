@@ -92,3 +92,4 @@ if __name__ == "__main__":
     print(f"\nResponse received: {response.choices[0].message.content}")
     print(f"Usage tracked: {response.usage.prompt_tokens} prompt, {response.usage.completion_tokens} completion")
     print("\n✅ Telemetry trace shipped automatically to AgentPulse dashboard!")
+

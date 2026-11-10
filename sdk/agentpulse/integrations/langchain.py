@@ -182,3 +182,4 @@ class AgentPulseCallbackHandler(BaseCallbackHandler):
             guardrail_reason=error.reason if is_breaker else str(error),
             circuit_tripped=is_breaker,
         )
+
