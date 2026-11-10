@@ -1,12 +1,12 @@
 # ==============================================================================
-# AgentPulse Ops — Render 1-Click Cloud Deployment Blueprint
+# Brenducate — Render 1-Click Cloud Deployment Blueprint
 # ==============================================================================
 # Deploy: Connect your GitHub repository to Render.com -> Blueprints -> New Blueprint Instance
 
 services:
   # 1. FastAPI Edge Ingestion API
   - type: web
-    name: agentpulse-api
+    name: brenducate-api
     runtime: python
     region: oregon
     plan: free
@@ -18,7 +18,7 @@ services:
         value: 3.12.0
       - key: DATABASE_URL
         fromDatabase:
-          name: agentpulse-db
+          name: brenducate-db
           property: connectionString
       - key: ENVIRONMENT
         value: production
@@ -31,9 +31,8 @@ services:
 
 databases:
   # 2. Managed PostgreSQL Database (Free Tier)
-  - name: agentpulse-db
+  - name: brenducate-db
     region: oregon
     plan: free
-    databaseName: agentpulse
-    user: agentpulse_admin
-
+    databaseName: brenducate
+    user: brenducate_admin

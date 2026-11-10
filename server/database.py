@@ -1,5 +1,5 @@
 """
-AgentPulse Ops — Database Layer
+Brenducate — Database Layer
 SQLite via SQLAlchemy (zero config — just works out of the box for MVP).
 Swap DATABASE_URL in .env to postgres:// to go to production.
 """

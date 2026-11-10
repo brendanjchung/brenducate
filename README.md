@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="assets/logo.jpg" alt="AgentPulse Logo" width="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);" />
-  <h1>AgentPulse Ops</h1>
+  <img src="assets/logo.jpg" alt="Brenducate Logo" width="120" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(16, 185, 129, 0.3);" />
+  <h1>Brenducate</h1>
   <p><strong>Autonomous AI Agent Observability, Prompt Regression Sentinel & Sub-Millisecond Circuit Breakers</strong></p>
   <p>Protecting engineering teams from runaway token spend, infinite loops, and silent hallucinations in production LLM agents.</p>
 </div>

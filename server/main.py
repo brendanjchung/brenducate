@@ -70,7 +70,7 @@ PLANS_CONFIG = {
 # ── App Bootstrap ────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="AgentPulse Ops API",
+    title="Brenducate API",
     description="Real-time LLM agent telemetry, circuit-breaker guardrails, and prompt drift monitoring.",
     version="0.1.0",
 )
@@ -86,7 +86,7 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
-    print("✅ AgentPulse backend ready. Database initialised.")
+    print("✅ Brenducate backend ready. Database initialised.")
 
 
 # ── Auth Helper ──────────────────────────────────────────────────────────────
@@ -161,7 +161,7 @@ def create_checkout_session(body: CreateCheckoutSessionRequest, db: Session = De
                     "price_data": {
                         "currency": "usd",
                         "product_data": {
-                            "name": f"AgentPulse {plan_meta['name']}",
+                            "name": f"Brenducate {plan_meta['name']}",
                             "description": f"Observability, circuit-breaker guardrails, and drift sentinel for {plan_meta['runs_limit']:,} agent runs/month.",
                         },
                         "unit_amount": int(plan_meta["price_usd"] * 100),
@@ -246,7 +246,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     if event_type == "checkout.session.completed":
         session = event.get("data", {}).get("object", {})
         metadata = session.get("metadata", {})
-        customer_email = session.get("customer_email") or metadata.get("email") or "customer@agentpulse.io"
+        customer_email = session.get("customer_email") or metadata.get("email") or "customer@brenducate.com"
         team_name = metadata.get("team_name") or "New Team"
         plan = metadata.get("plan") or "pro"
         stripe_sub_id = session.get("subscription")
@@ -480,5 +480,5 @@ def resolve_alert(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "AgentPulse Ops API", "version": "0.1.0"}
+    return {"status": "ok", "service": "Brenducate API", "version": "0.1.0"}
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AgentPulse Ops — Master Unified Server Launcher
+Brenducate — Master Unified Server Launcher
 
 Starts both:
   1. FastAPI Ingestion & Telemetry Backend (Port 8000)
@@ -23,7 +23,7 @@ SERVER_DIR = os.path.join(BASE_DIR, "server")
 processes = []
 
 def cleanup(sig=None, frame=None):
-    print("\n🛑 Shutting down AgentPulse Ops servers...")
+    print("\n🛑 Shutting down Brenducate servers...")
     for p in processes:
         try:
             p.terminate()
@@ -41,7 +41,7 @@ signal.signal(signal.SIGTERM, cleanup)
 
 def main():
     print("=" * 72)
-    print("  🚀 Starting AgentPulse Ops — Autonomous Agent Observability Platform")
+    print("  🚀 Starting Brenducate — Autonomous Agent Observability Platform")
     print("=" * 72)
 
     # 1. Initialize DB
@@ -76,7 +76,7 @@ def main():
     time.sleep(1.5)
 
     print("\n" + "=" * 72)
-    print("  🌟 AgentPulse Ops is Live!")
+    print("  🌟 Brenducate is Live!")
     print("  ")
     print("  📊 Dashboard UI:        http://localhost:3032/index.html")
     print("  ⚡ Edge Telemetry API:  http://localhost:8000")

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AgentPulse Ops | Autonomous AI Agent Telemetry & Cost Sentinel</title>
+  <title>Brenducate | Autonomous AI Agent Telemetry & Cost Sentinel</title>
   <meta name="description" content="Production observability, prompt drift detection, and automated circuit-breaker guardrails for LLM agents. Protect your AI budget and maintain reliability.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,11 +26,11 @@
     <div class="header-container">
       <div class="brand-block">
         <div class="brand-logo-wrap">
-          <img src="assets/logo.jpg" alt="AgentPulse Logo" class="brand-logo-img" width="38" height="38">
+          <img src="assets/logo.jpg" alt="Brenducate Logo" class="brand-logo-img" width="38" height="38">
           <div class="logo-glow"></div>
         </div>
         <div class="brand-text">
-          <h1 class="brand-title">AgentPulse<span class="brand-accent">Ops</span></h1>
+          <h1 class="brand-title">Brend<span class="brand-accent">ucate</span></h1>
           <span class="brand-tagline">LLM Telemetry & Drift Sentinel</span>
         </div>
       </div>
@@ -475,7 +475,7 @@
     <section class="tab-pane" id="pane-guardrails" role="tabpanel" aria-labelledby="tab-guardrails">
       <div class="section-intro">
         <h2>Autonomous Circuit Breakers & Budget Kill-Switches</h2>
-        <p>Hard boundaries for autonomous agents. If an agent loops recursively or spends more than your limit, AgentPulse kills the execution in &lt;10ms.</p>
+        <p>Hard boundaries for autonomous agents. If an agent loops recursively or spends more than your limit, Brenducate kills the execution in &lt;10ms.</p>
       </div>
 
       <div class="guardrails-grid">
@@ -612,7 +612,7 @@
     <section class="tab-pane" id="pane-integrations" role="tabpanel" aria-labelledby="tab-integrations">
       <div class="section-intro">
         <h2>1-Line SDK Drop-in & Webhook Integrations</h2>
-        <p>Integrate AgentPulse with any agent framework in under 2 minutes. Native wrappers for LangChain, LlamaIndex, CrewAI, AutoGen, and raw OpenAI / Anthropic clients.</p>
+        <p>Integrate Brenducate with any agent framework in under 2 minutes. Native wrappers for LangChain, LlamaIndex, CrewAI, AutoGen, and raw OpenAI / Anthropic clients.</p>
       </div>
 
       <div class="integrations-layout">
@@ -632,11 +632,11 @@
             </button>
           </div>
 
-          <pre class="code-block" id="sdkCodeDisplay"><code class="language-python"># pip install agentpulse-sdk
-from agentpulse import AgentPulse, CircuitBreaker
+          <pre class="code-block" id="sdkCodeDisplay"><code class="language-python"># pip install brenducate-sdk
+from brenducate import Brenducate, CircuitBreaker
 
 # 1. Initialize sentinel with your telemetry key
-sentinel = AgentPulse(
+sentinel = Brenducate(
     api_key="ap_live_7x90e8c201a4e5f98",
     environment="production"
 )
@@ -763,7 +763,7 @@ async def run_agent_workflow(user_goal: str):
       <!-- Micro-SaaS Business Calculator -->
       <div class="card roi-calculator-card">
         <h3 class="card-title">Token Waste & ROI Calculator</h3>
-        <p class="text-muted text-sm">See how much money AgentPulse saves an AI engineering team compared to rogue token loops.</p>
+        <p class="text-muted text-sm">See how much money Brenducate saves an AI engineering team compared to rogue token loops.</p>
         
         <div class="calc-grid">
           <div class="calc-input-col">
@@ -788,7 +788,7 @@ async def run_agent_workflow(user_goal: str):
             <div class="calc-result-box">
               <span class="calc-result-label">Wasted Token Cost Prevented:</span>
               <div class="calc-result-number text-emerald" id="calcSavedDollars">$1,728 / mo</div>
-              <p class="calc-result-sub">AgentPulse Pro ($99/mo) gives you a <strong>1,745% ROI</strong> on day one by intercepting runaway loops.</p>
+              <p class="calc-result-sub">Brenducate Pro ($99/mo) gives you a <strong>1,745% ROI</strong> on day one by intercepting runaway loops.</p>
               <button class="btn btn-primary" id="calcUpgradeBtn">Lock in Your Savings</button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 /**
- * AgentPulse Ops — Client-Side Application Engine
+ * Brenducate — Client-Side Application Engine
  * High-performance autonomous agent telemetry, drift sentinel & guardrails
  */
 
@@ -83,11 +83,11 @@ const INITIAL_TRACES = [
 
 // Code snippets for SDK tab
 const SDK_SNIPPETS = {
-  python: `# pip install agentpulse-sdk
-from agentpulse import AgentPulse, CircuitBreaker
+  python: `# pip install brenducate-sdk
+from brenducate import Brenducate, CircuitBreaker
 
 # 1. Initialize sentinel with your telemetry key
-sentinel = AgentPulse(
+sentinel = Brenducate(
     api_key="ap_live_7x90e8c201a4e5f98",
     environment="production"
 )
@@ -106,10 +106,10 @@ async def run_agent_workflow(user_goal: str):
     result = await my_custom_agent.execute(user_goal)
     return result`,
 
-  typescript: `// npm install @agentpulse/sdk
-import { AgentPulse } from '@agentpulse/sdk';
+  typescript: `// npm install @brenducate/sdk
+import { Brenducate } from '@brenducate/sdk';
 
-const sentinel = new AgentPulse({
+const sentinel = new Brenducate({
   apiKey: 'ap_live_7x90e8c201a4e5f98',
   environment: 'production',
   circuitBreaker: {
@@ -129,8 +129,8 @@ export async function handleAgentRequest(goal: string) {
   });
 }`,
 
-  curl: `# Send raw async telemetry event to AgentPulse Edge Ingestion API
-curl -X POST https://api.agentpulse.io/v1/telemetry/traces \\
+  curl: `# Send raw async telemetry event to Brenducate Edge Ingestion API
+curl -X POST https://api.brenducate.com/v1/telemetry/traces \\
   -H "Authorization: Bearer ap_live_7x90e8c201a4e5f98" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -145,12 +145,12 @@ curl -X POST https://api.agentpulse.io/v1/telemetry/traces \\
     "circuit_tripped": false
   }'`,
 
-  openai: `# pip install agentpulse-sdk openai
+  openai: `# pip install brenducate-sdk openai
 from openai import OpenAI
-from agentpulse import AgentPulse, CircuitBreaker, wrap_openai
+from brenducate import Brenducate, CircuitBreaker, wrap_openai
 
 # 1. Initialize sentinel
-pulse = AgentPulse(api_key="ap_live_7x90e8c201a4e5f98")
+pulse = Brenducate(api_key="ap_live_7x90e8c201a4e5f98")
 
 # 2. 1-Line wrap around your existing OpenAI client
 client = wrap_openai(
@@ -166,15 +166,15 @@ response = client.chat.completions.create(
     messages=[{"role": "user", "content": "Analyze user invoice"}]
 )`,
 
-  langchain: `# pip install agentpulse-sdk langchain
-from agentpulse import AgentPulse, CircuitBreaker
-from agentpulse.integrations.langchain import AgentPulseCallbackHandler
+  langchain: `# pip install brenducate-sdk langchain
+from brenducate import Brenducate, CircuitBreaker
+from brenducate.integrations.langchain import BrenducateCallbackHandler
 from langchain.agents import AgentExecutor
 
-pulse = AgentPulse(api_key="ap_live_7x90e8c201a4e5f98")
+pulse = Brenducate(api_key="ap_live_7x90e8c201a4e5f98")
 
 # Add the callback handler to any LangChain agent or chain
-handler = AgentPulseCallbackHandler(
+handler = BrenducateCallbackHandler(
     pulse=pulse,
     agent_id="research-langchain-agent",
     circuit_breaker=CircuitBreaker(max_hops=8, max_cost_usd=0.75)
@@ -279,7 +279,7 @@ async function syncTracesFromApi() {
       }
     }
   } catch (err) {
-    console.info('AgentPulse backend offline, using demo simulation data.');
+    console.info('Brenducate backend offline, using demo simulation data.');
   }
 }
 
@@ -1063,7 +1063,7 @@ function setupExportReport() {
 
   exportBtn.addEventListener('click', () => {
     const reportData = {
-      product: "AgentPulse Ops",
+      product: "Brenducate",
       report_type: "Executive AI Fleet Observability & Drift Audit",
       generated_at: new Date().toISOString(),
       active_monitored_agents: state.metrics.activeAgents,
@@ -1089,7 +1089,7 @@ function setupExportReport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `AgentPulse_Executive_Audit_${Date.now()}.json`;
+    a.download = `Brenducate_Executive_Audit_${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
