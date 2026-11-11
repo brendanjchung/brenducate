@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentpulse-sdk"
+name = "brenducate-sdk"
 version = "0.1.0"
 description = "Production observability, circuit-breaker guardrails, and prompt drift monitoring for autonomous LLM agents."
 readme = "README.md"
@@ -22,8 +22,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://agentpulse.io"
+Homepage = "https://brenducate.com"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agentpulse*"]
+include = ["brenducate*", "agentpulse*"]
