@@ -123,7 +123,10 @@ class BrenducateClient:
         max_queue_size: int = 2000,
     ) -> None:
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        cleaned_url = base_url.rstrip("/")
+        if cleaned_url == "https://brenducate.com":
+            cleaned_url = "https://www.brenducate.com"
+        self.base_url = cleaned_url
         self.sync_interval_s = max(5.0, sync_interval_s)
         self.enable_background_sync = enable_background_sync
         self._headers = {
@@ -145,7 +148,7 @@ class BrenducateClient:
 
     def _get_client(self, timeout: float = 3.0) -> httpx.Client:
         if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.Client(timeout=timeout)
+            self._http_client = httpx.Client(timeout=timeout, follow_redirects=True)
         return self._http_client
 
     def _start_worker(self) -> None:
@@ -207,7 +210,7 @@ class BrenducateClient:
         if not batch:
             return
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
                 if len(batch) == 1:
                     await client.post(
                         f"{self.base_url}/v1/telemetry/traces",

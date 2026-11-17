@@ -166,7 +166,7 @@ class Brenducate:
         self.api_key = api_key or os.getenv("BRENDUCATE_API_KEY", "br_live_demo_key_00001")
         self.base_url = (
             base_url
-            or os.getenv("BRENDUCATE_BASE_URL", "https://brenducate.com")
+            or os.getenv("BRENDUCATE_BASE_URL", "https://www.brenducate.com")
         ).rstrip("/")
         self.environment = environment
         self.verbose = verbose
