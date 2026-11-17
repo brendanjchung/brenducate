@@ -892,7 +892,4 @@ def health():
         "service": "Brenducate API",
         "version": "0.2.0",
         "database": engine.dialect.name,
-        "has_db_url": bool(os.getenv("DATABASE_URL")),
-        "has_postgres_url": bool(os.getenv("POSTGRES_URL")),
-        "matched_env_keys": [k for k in os.environ if any(w in k.upper() for w in ("DATA", "POSTGRES", "SQL", "SECRET"))],
     }
