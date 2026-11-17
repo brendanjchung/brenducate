@@ -83,7 +83,12 @@ load_dotenv()
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3032")
+STRIPE_PAYMENT_LINK_PRO = os.getenv("STRIPE_PAYMENT_LINK_PRO", "")
+STRIPE_PAYMENT_LINK_SCALE = os.getenv("STRIPE_PAYMENT_LINK_SCALE", "")
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "https://www.brenducate.com" if os.getenv("VERCEL") else "http://localhost:3032",
+)
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
@@ -830,7 +835,21 @@ def create_checkout_session(body: CreateCheckoutSessionRequest, db: Session = De
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
 
-    # Sandbox checkout fallback when STRIPE_SECRET_KEY is not configured
+    payment_link = STRIPE_PAYMENT_LINK_PRO if plan_key == "pro" else STRIPE_PAYMENT_LINK_SCALE
+    if payment_link and not STRIPE_SECRET_KEY:
+        return CheckoutSessionResponse(
+            checkout_url=payment_link,
+            session_id="pl_direct_" + secrets.token_hex(6),
+            plan=plan_key,
+        )
+
+    if os.getenv("VERCEL"):
+        raise HTTPException(
+            status_code=503,
+            detail="Self-serve Stripe checkout is activating — email brendan@brenducate.com to unlock Pro/Scale or claim a 14-day founder trial.",
+        )
+
+    # Local dev/test checkout fallback when running outside production
     email_norm = body.email.strip().lower()
     acc = db.query(Account).filter(Account.email == email_norm).first()
     if acc:

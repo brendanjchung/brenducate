@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brenducate — The margin guardrail for autonomous AI</title>
-  <meta name="description" content="Per-tenant LLM budget guardrails, same-family Smart Degradation, and sub-millisecond loop interception for OpenAI and Anthropic agents.">
+  <title>Brenducate — Stop heavy users &amp; loops from eating AI margins</title>
+  <meta name="description" content="In-process OpenAI & Anthropic margin guardrails: per-tenant spend caps, same-family Smart Degradation, and <1ms loop interception with zero proxy latency.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
@@ -155,10 +155,10 @@
     .announce .tag { font-weight: 500; color: var(--ink); background: var(--subtle); padding: 0.125rem 0.5rem; border-radius: 999px; }
     .announce .chev { color: var(--ink-3); }
     .hero h1 {
-      font-size: clamp(3rem, 1.5rem + 4.4vw, 5.25rem);
-      line-height: 1;
+      font-size: clamp(2.5rem, 1.4rem + 3.8vw, 4.75rem);
+      line-height: 1.03;
       letter-spacing: -0.03em;
-      max-width: 15ch;
+      max-width: 19ch;
       margin-inline: auto;
     }
     .hero-sub {
@@ -370,6 +370,7 @@
     .steps strong { display: block; font-weight: 600; margin-top: 0.125rem; }
     .steps p { color: var(--ink-2); margin-top: 0.25rem; font-size: 0.9375rem; }
     .steps code { font-family: var(--mono); font-size: 0.8125rem; color: var(--ink); background: var(--subtle); padding: 0.0625rem 0.375rem; border-radius: 4px; }
+    :is(p, h2, summary) code { font-family: var(--mono); font-size: 0.875em; color: var(--ink); background: var(--subtle); padding: 0.0625rem 0.3125rem; border-radius: 4px; }
 
     .code { background: var(--code-bg); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-window); }
     .code-tabs { display: flex; align-items: center; gap: 0.25rem; padding: 0.625rem 0.75rem 0; border-bottom: 1px solid var(--code-line); }
@@ -463,12 +464,12 @@
           <span class="chev" aria-hidden="true">→</span>
         </a>
 
-        <h1>The margin guardrail for autonomous AI</h1>
-        <p class="hero-sub">Track exact LLM spend per customer, automatically step down expensive runs to cheaper same-family models, and halt infinite loops in under a millisecond.</p>
+        <h1>Stop heavy users and loops from eating AI margins.</h1>
+        <p class="hero-sub">No external gateway. Zero proxy latency. Brenducate runs in-process inside your OpenAI and Anthropic clients to cap per-customer spend, step expensive runs down to cheaper same-family models, and halt infinite loops in &lt;1ms—fail-open by design.</p>
 
         <div class="hero-ctas">
           <a href="dashboard.html#signup" class="btn btn-primary">Get started free <span class="arrow" aria-hidden="true">→</span></a>
-          <a href="dashboard.html" class="btn btn-secondary">Open live dashboard</a>
+          <a href="dashboard.html#sandbox" class="btn btn-secondary">Explore live sandbox</a>
         </div>
         <div class="hero-pip">
           <button type="button" class="pip" data-copy="pip install brenducate-sdk">
@@ -556,7 +557,7 @@
       <div class="container">
         <div class="section-head">
           <span class="eyebrow">Why AI products bleed margin</span>
-          <h2>OpenAI only tracks your company key. It doesn't know who `acme_corp` is.</h2>
+          <h2>OpenAI only tracks your company key. It doesn't know who <code>acme_corp</code> is.</h2>
           <p>Global provider spend caps shut down your entire product when one tenant goes wild. Brenducate isolates and steps down the exact tenant burning your profit.</p>
         </div>
 
@@ -567,7 +568,7 @@
             <p>You charge $49/mo flat rate. One power customer fires recursive research tasks that consume $380 in Claude Sonnet tokens before your invoice arrives.</p>
             <div class="mode-fix">
               <span class="label">With Brenducate</span>
-              <p>Tag traffic with `tenant_id`. Automatically step that tenant down to Haiku or block excess runs without hurting anyone else.</p>
+              <p>Tag traffic with <code>tenant_id</code>. Automatically step that tenant down to Haiku or block excess runs without hurting anyone else.</p>
               <code class="chip">with sentinel.tenant("acme_corp"):</code>
             </div>
           </article>
@@ -587,7 +588,7 @@
             <p>Naive token trackers record $0.00 on OpenAI streams and misbill Anthropic cached reads vs writes, giving you false gross margin math.</p>
             <div class="mode-fix">
               <span class="label">With Brenducate</span>
-              <p>Auto-injects `include_usage` on streams and accounts accurately for uncached, cached read, cache write, and reasoning tokens.</p>
+              <p>Auto-injects <code>include_usage</code> on streams and accounts accurately for uncached, cached read, cache write, and reasoning tokens.</p>
               <code class="chip">stream_options={"include_usage": True}</code>
             </div>
           </article>
@@ -610,7 +611,7 @@
             <div class="pillar-text">
               <span class="pillar-tag">01 · Smart Degradation</span>
               <h3>Step down inside the same model family. Preserves prompt structure &amp; caches.</h3>
-              <p>Once a single run or customer crosses your soft threshold (say $0.25/run or $5/day), Brenducate swaps `claude-sonnet-4` → `claude-3-5-haiku-latest` or `gpt-4o` → `gpt-4o-mini` — staying sticky for the rest of the run so the fallback model immediately warms and hits its own prompt cache.</p>
+              <p>Once a single run or customer crosses your soft threshold (say $0.25/run or $5/day), Brenducate swaps <code>claude-sonnet-4</code> → <code>claude-3-5-haiku-latest</code> or <code>gpt-4o</code> → <code>gpt-4o-mini</code> — staying sticky for the rest of the run so the fallback model immediately warms and hits its own prompt cache.</p>
               <ul class="ticks">
                 <li>Zero broken API schemas or missing provider keys</li>
                 <li>Sticky per-run step-down protects cache hit economics</li>
@@ -641,7 +642,7 @@
             <div class="pillar-text">
               <span class="pillar-tag">02 · Per-Tenant Ledger</span>
               <h3>Know exactly which customers cost more than they pay you.</h3>
-              <p>See daily and 30-day spend, cached token efficiency, and margin saved broken down by `tenant_id`. Manually force step-down or block an abusive tenant with one click from your dashboard—synced to all your workers in 60 seconds.</p>
+              <p>See daily and 30-day spend, cached token efficiency, and margin saved broken down by <code>tenant_id</code>. Manually force step-down or block an abusive tenant with one click from your dashboard—synced to all your workers in 60 seconds.</p>
               <ul class="ticks">
                 <li>Per-tenant unit-economics leaderboard</li>
                 <li>Accurate OpenAI &amp; Anthropic prompt-cache token math</li>
@@ -666,7 +667,7 @@
             <div class="pillar-text">
               <span class="pillar-tag">03 · Serverless-Safe &amp; Open Source</span>
               <h3>Zero blocking network latency. Fails open if anything happens.</h3>
-              <p>Limit checks execute inside your Python runtime in under a millisecond using locally cached policy snapshots. Traces flush asynchronously via a background queue with explicit `flush()` and `atexit` hooks for AWS Lambda and Modal.</p>
+              <p>Limit checks execute inside your Python runtime in under a millisecond using locally cached policy snapshots. Traces flush asynchronously via a background queue with explicit <code>flush()</code> and <code>atexit</code> hooks for AWS Lambda and Modal.</p>
               <ul class="ticks">
                 <li>100% open-source MIT Python SDK inspectable on GitHub</li>
                 <li>Works identically with sync &amp; async clients</li>
@@ -693,7 +694,7 @@
             <div class="section-head">
               <span class="eyebrow">1-Line SDK Integration</span>
               <h2>Built purely for OpenAI &amp; Anthropic Python clients.</h2>
-              <p>Zero multi-framework callback bloat. Wrapping the underlying `OpenAI` or `Anthropic` client protects custom loops, FastAPI backends, and serverless workers alike.</p>
+              <p>Zero multi-framework callback bloat. Wrapping the underlying <code>OpenAI</code> or <code>Anthropic</code> client protects custom loops, FastAPI backends, and serverless workers alike.</p>
             </div>
             <ol class="steps">
               <li><span class="step-num">1</span><div><strong>Install open-source SDK</strong><p><code>pip install brenducate-sdk</code></p></div></li>
@@ -757,9 +758,9 @@ sentinel.flush()  <span class="t-com"># Safe for AWS Lambda &amp; Modal exit</sp
         </div>
 
         <div class="assurances">
-          <div><strong>Open-source SDK</strong><p>Read every line on GitHub before putting it near your production keys.</p></div>
+          <div><strong>Open-source SDK</strong><p>Read every line on <a href="https://github.com/brendanjchung/agentpulse" target="_blank" rel="noopener" style="text-decoration:underline; text-underline-offset:3px;">GitHub</a> before putting it near your production keys.</p></div>
           <div><strong>Fail-open runtime</strong><p>If our cloud is unreachable, your LLM calls continue uninterrupted.</p></div>
-          <div><strong>Serverless ready</strong><p>Built-in background queue + explicit `flush()` and `atexit` shutdown hooks.</p></div>
+          <div><strong>Serverless ready</strong><p>Built-in background queue + explicit <code>flush()</code> and <code>atexit</code> shutdown hooks.</p></div>
         </div>
       </div>
     </section>
@@ -824,18 +825,18 @@ sentinel.flush()  <span class="t-com"># Safe for AWS Lambda &amp; Modal exit</sp
         <div class="faq-list">
           <details name="faq" open>
             <summary>Why not just hack a Redis spend counter myself?</summary>
-            <p>A Redis integer counter doesn't handle OpenAI streaming `include_usage` injection, subtract cached prompt tokens from total prompt tokens, track Anthropic cache creation vs reads, enforce sticky same-family step-downs, or give you a dashboard where anyone on the team can throttle an unprofitable tenant in one click.</p>
+            <p>A Redis integer counter doesn't handle OpenAI streaming <code>include_usage</code> injection, subtract cached prompt tokens from total prompt tokens, track Anthropic cache creation vs reads, enforce sticky same-family step-downs, or give you a dashboard where anyone on the team can throttle an unprofitable tenant in one click.</p>
           </details>
           <details name="faq">
             <summary>Why do you default Smart Degradation to the same model family?</summary>
-            <p>Swapping `claude-sonnet-4` → `claude-3-5-haiku` or `gpt-4o` → `gpt-4o-mini` keeps your existing client authentication, tool-call format, and `cache_control` annotations completely intact. Once a run crosses the soft cap, staying sticky on that fallback model also lets steps 4–8 reuse that model's KV prompt cache.</p>
+            <p>Swapping <code>claude-sonnet-4</code> → <code>claude-3-5-haiku</code> or <code>gpt-4o</code> → <code>gpt-4o-mini</code> keeps your existing client authentication, tool-call format, and <code>cache_control</code> annotations completely intact. Once a run crosses the soft cap, staying sticky on that fallback model also lets steps 4–8 reuse that model's KV prompt cache.</p>
           </details>
           <details name="faq">
             <summary>Will telemetry be lost in AWS Lambda or Modal functions?</summary>
-            <p>No. Alongside our non-blocking daemon batch queue, Brenducate registers an automatic `atexit` drain and provides an explicit `sentinel.flush()` / `await sentinel.aflush()` call for handler teardown.</p>
+            <p>No. Alongside our non-blocking daemon batch queue, Brenducate registers an automatic <code>atexit</code> drain and provides an explicit <code>sentinel.flush()</code> / <code>await sentinel.aflush()</code> call for handler teardown.</p>
           </details>
           <details name="faq">
-            <summary>Does wrapping `OpenAI` or `Anthropic` add request latency?</summary>
+            <summary>Does wrapping <code>OpenAI</code> or <code>Anthropic</code> add request latency?</summary>
             <p>Budget and loop checks execute in memory against synced policy snapshots in under 1ms. If Brenducate's cloud API is ever unreachable, the SDK fails open cleanly so your customer traffic never stops.</p>
           </details>
         </div>
@@ -849,7 +850,7 @@ sentinel.flush()  <span class="t-com"># Safe for AWS Lambda &amp; Modal exit</sp
         <p>Install the open-source SDK in 60 seconds and see exact unit economics today.</p>
         <div class="hero-ctas">
           <a href="dashboard.html#signup" class="btn btn-primary">Create free workspace <span class="arrow" aria-hidden="true">→</span></a>
-          <a href="dashboard.html" class="btn btn-secondary">Explore live sandbox</a>
+          <a href="dashboard.html#sandbox" class="btn btn-secondary">Explore live sandbox</a>
         </div>
       </div>
     </section>

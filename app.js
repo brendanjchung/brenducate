@@ -153,6 +153,11 @@ function setAuthenticatedUI(isAuthed) {
 async function bootstrapSession() {
   if (window.location.hash === '#login') switchAuthMode('login');
   if (window.location.hash === '#signup') switchAuthMode('signup');
+  if (window.location.hash === '#sandbox') {
+    appState.token = DEMO_KEY;
+    appState.fullApiKeyOnce = DEMO_KEY;
+    localStorage.setItem(STORAGE_TOKEN_KEY, DEMO_KEY);
+  }
 
   if (!appState.token) {
     setAuthenticatedUI(false);
@@ -764,12 +769,12 @@ document.addEventListener('DOMContentLoaded', () => {
             cancel_url: `${window.location.origin}/dashboard.html?status=cancelled`,
           }),
         });
-        if (res.checkout_url && res.checkout_url.startsWith('https://checkout.stripe.com')) {
+        if (res.checkout_url && /^https:\/\/(checkout|buy)\.stripe\.com/i.test(res.checkout_url)) {
           window.location.href = res.checkout_url;
           return;
         }
         document.getElementById('upgradeDialog').close();
-        showToast(`Workspace upgraded to ${res.plan.toUpperCase()} (sandbox mode)!`, 'ok');
+        showToast(`Workspace upgraded to ${res.plan.toUpperCase()}!`, 'ok');
         await bootstrapSession();
       } catch (err) {
         showToast(err.message, 'warn');

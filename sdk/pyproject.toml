@@ -21,8 +21,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://brenducate.com"
-Source = "https://github.com/brendanjchung/brenducate-python"
+Homepage = "https://www.brenducate.com"
+Source = "https://github.com/brendanjchung/agentpulse"
 
 [tool.setuptools.packages.find]
 where = ["."]
