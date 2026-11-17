@@ -1,1167 +1,781 @@
 /**
- * Brenducate — Client-Side Application Engine
- * High-performance autonomous agent telemetry, drift sentinel & guardrails
+ * Brenducate — Margin Control Dashboard Engine
+ * Connects directly to FastAPI backend (`/v1/*`) on Vercel or localhost:8000.
  */
 
-// Initial Seed Data: Traces
-const INITIAL_TRACES = [
-  {
-    id: 'TR-8941',
-    agent: 'Financial Research Agent',
-    agentKey: 'researcher',
-    model: 'Claude 3.7 Sonnet',
-    prompt: 'Analyze Q3 semiconductor supply chain bottlenecks and extract TSMC margin guidance',
-    status: 'COMPLETED',
-    tokens: 34210,
-    cost: 0.184,
-    latency: '1.42s',
-    hops: 4,
-    timestamp: '2 mins ago',
-    steps: [
-      { type: 'thought', title: 'Task Decomposition', content: 'Decomposing query: Identify 10-Q filing references, query TSMC 2026 Q3 gross margins and fab capacity constraints.' },
-      { type: 'tool', title: 'Tool Call: sec_edgar_filings(ticker="TSM", form="10-Q")', content: 'Invoking SEC EDGAR API. Found 1 matching report filed Oct 18, 2026.' },
-      { type: 'tool', title: 'Tool Call: vector_search(query="gross margin target advanced nodes")', content: 'Semantic search returned 4 chunks: "Gross margin targeted at 53-55% for 3nm & 2nm ramp."' },
-      { type: 'final', title: 'Final Synthesized Response', content: 'TSMC reported 54.2% gross margin in Q3 2026. Management reiterated long-term target of 53%+ despite advanced packaging supply constraints.' }
-    ]
-  },
-  {
-    id: 'TR-8939',
-    agent: 'Autonomous SQL Analyst',
-    agentKey: 'sql',
-    model: 'GPT-4o',
-    prompt: 'Find customer churn cohorts in Stripe subscriptions where churn occurred within 45 days',
-    status: 'CIRCUIT_KILLED',
-    tokens: 68140,
-    cost: 0.512,
-    latency: '3.18s',
-    hops: 7,
-    timestamp: '14 mins ago',
-    steps: [
-      { type: 'thought', title: 'Formulating Query', content: 'Attempting schema inspection on postgres `subscriptions` and `events` tables.' },
-      { type: 'tool', title: 'Tool Call: sql_exec("SELECT * FROM subscriptions WHERE...")', content: 'Execution timed out. Agent re-attempted with same syntax.' },
-      { type: 'tool', title: 'Tool Call: sql_exec("SELECT * FROM subscriptions WHERE...")', content: 'Execution timed out. Agent re-attempted identical query.' },
-      { type: 'guardrail', title: 'Circuit Breaker: Repetitive Query Guardrail #3', content: 'Identical query pattern detected 3 times with no parameter variation. Agent killed in 8ms to prevent runaway query cost.' }
-    ]
-  },
-  {
-    id: 'TR-8935',
-    agent: 'Customer Copilot',
-    agentKey: 'support',
-    model: 'Gemini 2.5 Pro',
-    prompt: 'Customer asking for invoice refund policy for enterprise annual contracts',
-    status: 'DRIFT_WARNING',
-    tokens: 12400,
-    cost: 0.038,
-    latency: '0.84s',
-    hops: 2,
-    timestamp: '32 mins ago',
-    steps: [
-      { type: 'thought', title: 'Policy Retrieval', content: 'Querying enterprise service agreement terms.' },
-      { type: 'tool', title: 'Tool Call: kb_search("enterprise refund SLA")', content: 'Retrieved Section 8.4: Annual contracts non-refundable after 30 days.' },
-      { type: 'final', title: 'Response Generated (Drift Detected)', content: 'Model offered a custom 60-day refund window without manager authorization. Semantic drift score: 0.82.' }
-    ]
-  },
-  {
-    id: 'TR-8928',
-    agent: 'Code Review Sentinel',
-    agentKey: 'code',
-    model: 'Claude 3.7 Sonnet',
-    prompt: 'Audit PR #842 for SQL injection and unsafe subprocess execution in Python service',
-    status: 'COMPLETED',
-    tokens: 41800,
-    cost: 0.224,
-    latency: '1.95s',
-    hops: 3,
-    timestamp: '1h 10m ago',
-    steps: [
-      { type: 'thought', title: 'AST Analysis', content: 'Parsing python diff for `exec()`, `eval()`, and unparameterized database cursors.' },
-      { type: 'tool', title: 'Tool Call: semgrep_scan(target="services/db.py")', content: 'Found 0 vulnerabilities. Code conforms to PEP-675 literal string typing.' },
-      { type: 'final', title: 'Review Passed', content: 'PR approved with 2 minor linting recommendations.' }
-    ]
+const API_BASE =
+  (['localhost', '127.0.0.1'].includes(window.location.hostname) &&
+    window.location.port !== '8000')
+    ? 'http://localhost:8000'
+    : '';
+
+const STORAGE_TOKEN_KEY = 'brenducate_auth_token';
+const DEMO_KEY = 'br_live_demo_key_00001';
+
+const appState = {
+  token: localStorage.getItem(STORAGE_TOKEN_KEY) || '',
+  fullApiKeyOnce: '',
+  profile: null,
+  policy: null,
+  margins: null,
+  traces: [],
+  alerts: [],
+};
+
+// ── DOM & Accessibility Helpers ───────────────────────────────────────────────
+
+function el(tag, attrs = {}, text = '') {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === undefined || v === null) continue;
+    if (k === 'className') node.className = v;
+    else node.setAttribute(k, String(v));
   }
-];
+  if (text !== '') node.textContent = text;
+  return node;
+}
 
-// Code snippets for SDK tab
-const SDK_SNIPPETS = {
-  python: `# pip install brenducate-sdk
-from brenducate import Brenducate, CircuitBreaker
+function showToast(msg, tone = '') {
+  const container = document.getElementById('toastContainer');
+  if (!container) return;
+  const item = el('div', { className: `toast ${tone}`.trim() }, msg);
+  container.appendChild(item);
+  setTimeout(() => item.remove(), 3400);
+}
 
-# 1. Initialize sentinel with your telemetry key
-sentinel = Brenducate(
-    api_key="ap_live_7x90e8c201a4e5f98",
-    environment="production"
-)
+function fmtUsd(n, digits = 2) {
+  const val = Number(n || 0);
+  if (val > 0 && val < 0.01) return `$${val.toFixed(4)}`;
+  return `$${val.toFixed(digits)}`;
+}
 
-# 2. Wrap your agent runner or LangChain / CrewAI executor
-@sentinel.monitor(
-    agent_id="financial-researcher",
-    circuit_breaker=CircuitBreaker(
-        max_hops=6,
-        max_cost_usd=0.50,
-        kill_on_infinite_loop=True
-    )
-)
-async def run_agent_workflow(user_goal: str):
-    # Your agent code runs untouched!
-    result = await my_custom_agent.execute(user_goal)
-    return result`,
+// ── Dialog Light-Dismiss Fallback (Safari / Older Browsers) ───────────────────
 
-  typescript: `// npm install @brenducate/sdk
-import { Brenducate } from '@brenducate/sdk';
-
-const sentinel = new Brenducate({
-  apiKey: 'ap_live_7x90e8c201a4e5f98',
-  environment: 'production',
-  circuitBreaker: {
-    maxHops: 6,
-    maxCostUsd: 0.50,
-    killOnRecursion: true,
+function initDialogLightDismiss() {
+  for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
+    if (!('closedBy' in HTMLDialogElement.prototype)) {
+      dialog.addEventListener('click', (event) => {
+        if (event.target !== dialog) return;
+        const rect = dialog.getBoundingClientRect();
+        const inside =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+        if (!inside) dialog.close();
+      });
+    }
   }
-});
+}
 
-export async function handleAgentRequest(goal: string) {
-  // Wrap your agent execution context
-  return await sentinel.trace('customer-copilot', async (trace) => {
-    const response = await myAgent.run(goal, {
-      onStep: (step) => trace.logStep(step)
-    });
-    return response;
+// ── Form Validation ARIA Sync (:user-invalid) ─────────────────────────────────
+
+function initValidationFeedback() {
+  const dirtyState = new WeakMap();
+  const useFallback = typeof CSS !== 'undefined' && !CSS.supports('selector(:user-invalid)');
+
+  const syncAria = (input) => {
+    if (!input || !input.checkValidity) return;
+    if (useFallback) {
+      const ok = input.checkValidity();
+      input.classList.toggle('user-invalid-fallback', !ok);
+      input.setAttribute('aria-invalid', ok ? 'false' : 'true');
+    } else {
+      input.setAttribute('aria-invalid', input.matches(':user-invalid') ? 'true' : 'false');
+    }
+  };
+
+  document.addEventListener(
+    'blur',
+    (e) => {
+      const t = e.target;
+      if (!t || !t.checkValidity) return;
+      const st = dirtyState.get(t) || { interacted: false, blurred: false };
+      st.blurred = true;
+      dirtyState.set(t, st);
+      if (!useFallback || st.interacted) syncAria(t);
+    },
+    true
+  );
+
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (!t || !t.checkValidity) return;
+    const st = dirtyState.get(t) || { interacted: false, blurred: false };
+    st.interacted = true;
+    dirtyState.set(t, st);
+    if (st.blurred || t.hasAttribute('aria-invalid')) syncAria(t);
   });
-}`,
+}
 
-  curl: `# Send raw async telemetry event to Brenducate Edge Ingestion API
-curl -X POST https://api.brenducate.com/v1/telemetry/traces \\
-  -H "Authorization: Bearer ap_live_7x90e8c201a4e5f98" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "agent_id": "custom-agent-01",
-    "model": "claude-3-7-sonnet",
-    "prompt": "Summarize market data",
-    "hops": 3,
-    "input_tokens": 12400,
-    "output_tokens": 850,
-    "cost_usd": 0.048,
-    "latency_ms": 1120,
-    "circuit_tripped": false
-  }'`,
+// ── HTTP Helper ───────────────────────────────────────────────────────────────
 
-  openai: `# pip install brenducate-sdk openai
+async function apiFetch(path, options = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (appState.token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${appState.token}`;
+  }
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (!res.ok) {
+    const detail = body?.detail || `HTTP ${res.status}`;
+    const err = new Error(detail);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+// ── Auth State & Forms ────────────────────────────────────────────────────────
+
+function switchAuthMode(mode) {
+  const isSignup = mode !== 'login';
+  document.getElementById('modeSignupBtn').setAttribute('aria-selected', String(isSignup));
+  document.getElementById('modeLoginBtn').setAttribute('aria-selected', String(!isSignup));
+  document.getElementById('signupForm').classList.toggle('hidden', !isSignup);
+  document.getElementById('loginForm').classList.toggle('hidden', isSignup);
+}
+
+function setAuthenticatedUI(isAuthed) {
+  document.getElementById('authGate').classList.toggle('hidden', isAuthed);
+  document.getElementById('dashApp').classList.toggle('hidden', !isAuthed);
+  document.getElementById('dashNav').classList.toggle('hidden', !isAuthed);
+  document.getElementById('workspaceBadge').classList.toggle('hidden', !isAuthed);
+  document.getElementById('upgradeBtn').classList.toggle('hidden', !isAuthed);
+  document.getElementById('logoutBtn').classList.toggle('hidden', !isAuthed);
+}
+
+async function bootstrapSession() {
+  if (window.location.hash === '#login') switchAuthMode('login');
+  if (window.location.hash === '#signup') switchAuthMode('signup');
+
+  if (!appState.token) {
+    setAuthenticatedUI(false);
+    return;
+  }
+  try {
+    appState.profile = await apiFetch('/v1/auth/me');
+    setAuthenticatedUI(true);
+    renderProfile();
+    await loadAllDashboardData();
+  } catch {
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
+    appState.token = '';
+    setAuthenticatedUI(false);
+  }
+}
+
+function renderProfile() {
+  const p = appState.profile;
+  if (!p) return;
+
+  const badge = document.getElementById('workspaceBadge');
+  badge.textContent = `${p.team_name} · ${p.plan}`;
+
+  const keyChip = document.getElementById('keyDisplayChip');
+  const copyBtn = document.getElementById('copyFullKeyBtn');
+  if (appState.fullApiKeyOnce) {
+    keyChip.textContent = appState.fullApiKeyOnce;
+    copyBtn.classList.remove('hidden');
+  } else {
+    keyChip.textContent = p.api_key_prefix;
+    copyBtn.classList.add('hidden');
+  }
+
+  document.getElementById('sdkKeyPrefix').textContent = p.api_key_prefix;
+  document.getElementById('slackWebhookInput').value = p.slack_webhook_url || '';
+
+  const keyPlaceholder = appState.fullApiKeyOnce || p.api_key_prefix;
+  document.getElementById('sdkSnippetPre').textContent =
+`# pip install brenducate-sdk
 from openai import OpenAI
 from brenducate import Brenducate, CircuitBreaker, wrap_openai
 
-# 1. Initialize sentinel
-pulse = Brenducate(api_key="ap_live_7x90e8c201a4e5f98")
-
-# 2. 1-Line wrap around your existing OpenAI client
+sentinel = Brenducate(api_key="${keyPlaceholder}")
 client = wrap_openai(
     OpenAI(),
-    pulse=pulse,
-    agent_id="customer-support-copilot",
-    circuit_breaker=CircuitBreaker(max_hops=6, max_cost_usd=0.50)
+    pulse=sentinel,
+    circuit_breaker=CircuitBreaker(degrade_after_cost_usd=0.25, max_cost_usd=1.50),
 )
 
-# Standard calls are now monitored with zero code changes!
-response = client.chat.completions.create(
-    model="gpt-4o",
-    messages=[{"role": "user", "content": "Analyze user invoice"}]
-)`,
-
-  langchain: `# pip install brenducate-sdk langchain
-from brenducate import Brenducate, CircuitBreaker
-from brenducate.integrations.langchain import BrenducateCallbackHandler
-from langchain.agents import AgentExecutor
-
-pulse = Brenducate(api_key="ap_live_7x90e8c201a4e5f98")
-
-# Add the callback handler to any LangChain agent or chain
-handler = BrenducateCallbackHandler(
-    pulse=pulse,
-    agent_id="research-langchain-agent",
-    circuit_breaker=CircuitBreaker(max_hops=8, max_cost_usd=0.75)
-)
-
-executor = AgentExecutor(agent=agent, tools=tools, callbacks=[handler])
-result = executor.invoke({"input": "Generate competitor matrix"})`
-};
-
-// Application State
-const API_BASE_URL = 'http://localhost:8000';
-const DEMO_API_KEY = 'ap_live_demo_key_00001';
-
-const state = {
-  activeTab: 'dashboard',
-  traces: [...INITIAL_TRACES],
-  simulationRunning: false,
-  simulationInterval: null,
-  simTimerInterval: null,
-  rules: {
-    maxHops: 6,
-    maxCost: 0.75,
-    maxDupes: 2,
-    recursionActive: true,
-    costActive: true,
-    repetitionActive: true,
-    piiActive: true,
-  },
-  metrics: {
-    activeAgents: 24,
-    tokenSpend: 412.85,
-    driftIndex: 1.2,
-    anomalies: 9,
-    latency: '1.28s'
-  }
-};
-
-// Helper: Format ISO timestamp to relative time
-function formatTimeAgo(date) {
-  const seconds = Math.floor((new Date() - date) / 1000);
-  if (seconds < 60) return `${Math.max(1, seconds)}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+# Tag requests with your end-customer ID
+with sentinel.tenant("acme_corp"):
+    res = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Analyze Q3 margin drivers"}],
+        stream=True,
+    )
+    for chunk in res:
+        pass`;
 }
 
-// Sync traces and KPI metrics from the real FastAPI backend
-async function syncTracesFromApi() {
+// ── Dashboard Data Sync & Safe DOM Rendering ──────────────────────────────────
+
+async function loadAllDashboardData() {
+  const [marginsRes, tracesRes, policyRes, alertsRes] = await Promise.all([
+    apiFetch('/v1/dashboard/margins'),
+    apiFetch(buildTracesQuery()),
+    apiFetch('/v1/policies/sync'),
+    apiFetch('/v1/alerts?resolved=false'),
+  ]);
+  appState.margins = marginsRes;
+  appState.traces = tracesRes;
+  appState.policy = policyRes.policy;
+  appState.alerts = alertsRes;
+
+  renderMargins(marginsRes);
+  renderTracesTable(tracesRes);
+  renderPolicyEditor(policyRes.policy);
+  renderAlerts(alertsRes);
+}
+
+function buildTracesQuery() {
+  const tenant = document.getElementById('traceTenantFilter')?.value?.trim();
+  const statusVal = document.getElementById('traceStatusFilter')?.value;
+  const params = new URLSearchParams({ limit: '60' });
+  if (tenant) params.set('tenant_id', tenant);
+  if (statusVal) params.set('status_filter', statusVal);
+  return `/v1/telemetry/traces?${params.toString()}`;
+}
+
+function statusBadge(st) {
+  const map = {
+    ok: ['badge-ok', 'Within budget'],
+    COMPLETED: ['badge-ok', 'Completed'],
+    degrade: ['badge-warn', 'Smart Degraded'],
+    DEGRADED: ['badge-warn', 'Smart Degraded'],
+    blocked: ['badge-halt', 'Daily Cap Blocked'],
+    BUDGET_BLOCKED: ['badge-halt', 'Budget Blocked'],
+    CIRCUIT_KILLED: ['badge-halt', 'Loop Halted'],
+    ERROR: ['badge-neutral', 'Provider Error'],
+  };
+  const [cls, label] = map[st] || ['badge-neutral', st || 'Unknown'];
+  return el('span', { className: `badge ${cls}` }, label);
+}
+
+function renderMargins(m) {
+  document.getElementById('kpiSaved30d').textContent = fmtUsd(m.net_margin_saved_30d_usd);
+  document.getElementById('kpiSpend24h').textContent = fmtUsd(m.total_spend_24h_usd);
+  document.getElementById('kpiSpend30dSub').textContent = `${fmtUsd(m.total_spend_30d_usd)} spent in last 30 days`;
+  document.getElementById('kpiTenantsCount').textContent = `${m.active_tenants_count} tenants`;
+  document.getElementById('kpiDegraded24h').textContent = String(m.degraded_calls_24h);
+  document.getElementById('kpiKilled24h').textContent = String(m.killed_runs_24h);
+  document.getElementById('kpiAlertsSub').textContent = `${m.open_alerts} open alerts`;
+
+  const tbody = document.getElementById('tenantsTableBody');
+  tbody.replaceChildren();
+
+  if (!m.top_tenants || m.top_tenants.length === 0) {
+    const tr = el('tr');
+    const td = el('td', { colspan: '9', className: 'muted', style: 'text-align:center; padding: 2rem;' },
+      'No tenant activity recorded yet. Click "Simulate Degraded Run" above to verify live telemetry.');
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  for (const row of m.top_tenants) {
+    const tr = el('tr');
+
+    const th = el('th', { scope: 'row', className: 'mono' }, row.tenant_id);
+    tr.appendChild(th);
+
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Spent Today' }, fmtUsd(row.spent_today_usd)));
+
+    const tdSaved = el('td', { className: 'r', 'data-label': 'Saved Today', style: 'color: var(--ok); font-weight: 500;' },
+      fmtUsd(row.saved_today_usd));
+    tr.appendChild(tdSaved);
+
+    tr.appendChild(el('td', { className: 'r', 'data-label': '30d Spend' }, fmtUsd(row.spent_30d_usd)));
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Runs' }, String(row.run_count)));
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Degraded' }, String(row.degraded_calls_count)));
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Halted' }, String(row.killed_runs_count)));
+
+    const tdStatus = el('td', { 'data-label': 'Status' });
+    tdStatus.appendChild(statusBadge(row.status));
+    tr.appendChild(tdStatus);
+
+    const tdCtrl = el('td', { 'data-label': 'Manual Override' });
+    const wrap = el('div', { style: 'display:flex; gap:0.375rem; flex-wrap:wrap;' });
+
+    const btnAuto = el('button', {
+      type: 'button',
+      className: `btn btn-xs ${row.override_mode === 'auto' ? 'btn-primary' : 'btn-secondary'}`,
+    }, 'Auto');
+    btnAuto.addEventListener('click', () => setTenantMode(row.tenant_id, 'auto'));
+
+    const btnDeg = el('button', {
+      type: 'button',
+      className: `btn btn-xs ${row.override_mode === 'force_degrade' ? 'btn-primary' : 'btn-secondary'}`,
+    }, 'Force Step-Down');
+    btnDeg.addEventListener('click', () => setTenantMode(row.tenant_id, 'force_degrade'));
+
+    const btnBlock = el('button', {
+      type: 'button',
+      className: `btn btn-xs ${row.override_mode === 'blocked' ? 'btn-danger' : 'btn-secondary'}`,
+    }, 'Block');
+    btnBlock.addEventListener('click', () => setTenantMode(row.tenant_id, 'blocked'));
+
+    wrap.append(btnAuto, btnDeg, btnBlock);
+    tdCtrl.appendChild(wrap);
+    tr.appendChild(tdCtrl);
+
+    tbody.appendChild(tr);
+  }
+}
+
+async function setTenantMode(tenantId, mode) {
   try {
-    const res = await fetch(`${API_BASE_URL}/v1/telemetry/traces`, {
-      headers: { 'Authorization': `Bearer ${DEMO_API_KEY}` }
+    await apiFetch(`/v1/tenants/${encodeURIComponent(tenantId)}/mode`, {
+      method: 'PATCH',
+      body: JSON.stringify({ override_mode: mode }),
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (Array.isArray(data) && data.length > 0) {
-      const liveTraces = data.map(item => {
-        const timeAgo = item.created_at ? formatTimeAgo(new Date(item.created_at)) : 'Just now';
-        return {
-          id: item.id,
-          agent: item.agent_id,
-          agentKey: item.agent_id.toLowerCase().includes('sql') ? 'sql' :
-                    item.agent_id.toLowerCase().includes('research') ? 'researcher' :
-                    item.agent_id.toLowerCase().includes('support') ? 'support' : 'code',
-          model: item.model,
-          prompt: item.prompt,
-          status: item.status,
-          tokens: item.total_tokens || 0,
-          cost: item.cost_usd || 0.0,
-          latency: `${(item.latency_ms / 1000).toFixed(2)}s`,
-          hops: item.hops || 1,
-          timestamp: timeAgo,
-          guardrailReason: item.guardrail_reason,
-          steps: []
-        };
-      });
-      state.traces = liveTraces;
-      renderTraces();
-    }
-
-    // Sync summary metrics
-    const summaryRes = await fetch(`${API_BASE_URL}/v1/dashboard/summary`, {
-      headers: { 'Authorization': `Bearer ${DEMO_API_KEY}` }
-    });
-    if (summaryRes.ok) {
-      const summary = await summaryRes.json();
-      const elAgents = document.getElementById('metricActiveAgents');
-      const elSpend = document.getElementById('metricTokenSpend');
-      const elAnomalies = document.getElementById('metricAnomalies');
-      const elLatency = document.getElementById('metricLatency');
-
-      if (elAgents && summary.active_agents) elAgents.textContent = summary.active_agents;
-      if (elSpend && summary.total_cost_usd_24h !== undefined) {
-        elSpend.textContent = `$${summary.total_cost_usd_24h.toFixed(2)}`;
-      }
-      if (elAnomalies && summary.circuit_trips_today !== undefined) {
-        elAnomalies.textContent = summary.circuit_trips_today;
-      }
-      if (elLatency && summary.avg_latency_ms) {
-        elLatency.textContent = `${(summary.avg_latency_ms / 1000).toFixed(2)}s`;
-      }
-    }
+    showToast(`Tenant '${tenantId}' set to ${mode}. SDKs sync within 60s.`, 'ok');
+    await loadAllDashboardData();
   } catch (err) {
-    console.info('Brenducate backend offline, using demo simulation data.');
+    showToast(err.message, 'warn');
   }
 }
 
-// DOM Content Loaded Handler
-document.addEventListener('DOMContentLoaded', () => {
-  setupNavigation();
-  renderTraces();
-  setupTraceModal();
-  setupSimulator();
-  setupDriftSentinel();
-  setupGuardrails();
-  setupIntegrations();
-  setupPricingAndRoi();
-  setupExportReport();
-  setupBanner();
-  setupDialogPolyfillFallback();
+function renderTracesTable(traces) {
+  const tbody = document.getElementById('tracesTableBody');
+  tbody.replaceChildren();
 
-  // Initial sync from live backend
-  syncTracesFromApi();
-});
+  if (!traces || traces.length === 0) {
+    const tr = el('tr');
+    tr.appendChild(el('td', { colspan: '8', className: 'muted', style: 'text-align:center; padding: 2rem;' },
+      'No matching traces found.'));
+    tbody.appendChild(tr);
+    return;
+  }
 
-/* ==========================================================================
-   Navigation Tabs
-   ========================================================================== */
-function setupNavigation() {
-  const tabs = document.querySelectorAll('.nav-tab');
-  const panes = document.querySelectorAll('.tab-pane');
+  for (const t of traces) {
+    const tr = el('tr', { className: 'clickable' });
+    tr.addEventListener('click', () => openTraceDetail(t.id));
 
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const target = tab.dataset.tab;
-      state.activeTab = target;
+    tr.appendChild(el('th', { scope: 'row', className: 'mono' }, t.id));
+    tr.appendChild(el('td', { 'data-label': 'Tenant', className: 'mono' }, t.tenant_id));
+    tr.appendChild(el('td', { 'data-label': 'Agent' }, t.agent_id));
 
-      tabs.forEach(t => t.classList.remove('active'));
-      panes.forEach(p => p.classList.remove('active'));
+    const modelText = t.was_degraded
+      ? `${t.original_model} → ${t.executed_model}`
+      : t.executed_model;
+    tr.appendChild(el('td', { 'data-label': 'Model Path', className: 'mono', style: 'font-size:0.75rem;' }, modelText));
 
-      tab.classList.add('active');
-      const targetPane = document.getElementById(`pane-${target}`);
-      if (targetPane) {
-        targetPane.classList.add('active');
-      }
-    });
-  });
+    const tdSt = el('td', { 'data-label': 'Status' });
+    tdSt.appendChild(statusBadge(t.status));
+    tr.appendChild(tdSt);
 
-  // Direct upgrade plan button in header
-  const upgradePlanBtn = document.getElementById('upgradePlanBtn');
-  if (upgradePlanBtn) {
-    upgradePlanBtn.addEventListener('click', () => {
-      openCheckoutModal('pro', 'Professional Ops ($99/month)', '$99.00');
-    });
+    const tokLabel = `${(t.total_tokens || 0).toLocaleString()} (${(t.cached_input_tokens || 0).toLocaleString()} cached)`;
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Tokens' }, tokLabel));
+    tr.appendChild(el('td', { className: 'r', 'data-label': 'Cost' }, fmtUsd(t.cost_usd, 4)));
+    tr.appendChild(el('td', {
+      className: 'r',
+      'data-label': 'Saved',
+      style: t.estimated_savings_usd > 0 ? 'color: var(--ok); font-weight:500;' : '',
+    }, fmtUsd(t.estimated_savings_usd, 4)));
+
+    tbody.appendChild(tr);
   }
 }
 
-/* ==========================================================================
-   Traces Rendering & Filter
-   ========================================================================== */
-function renderTraces(filter = 'all') {
-  const container = document.getElementById('tracesList');
-  if (!container) return;
+async function openTraceDetail(traceId) {
+  try {
+    const trace = await apiFetch(`/v1/telemetry/traces/${encodeURIComponent(traceId)}`);
+    document.getElementById('traceDialogTitle').textContent = `${trace.agent_id} (${trace.tenant_id})`;
+    document.getElementById('traceDialogMeta').textContent =
+      `${trace.id} · ${trace.was_degraded ? `${trace.original_model} → ${trace.executed_model}` : trace.executed_model} · ${trace.latency_ms}ms`;
 
-  const filtered = filter === 'all' 
-    ? state.traces 
-    : state.traces.filter(t => t.agentKey === filter);
+    const body = document.getElementById('traceDialogBody');
+    body.replaceChildren();
 
-  container.innerHTML = filtered.map(trace => {
-    let badgeClass = 'badge-success';
-    let badgeText = 'COMPLETED';
-
-    if (trace.status === 'CIRCUIT_KILLED') {
-      badgeClass = 'badge-danger';
-      badgeText = 'AUTO-KILLED';
-    } else if (trace.status === 'DRIFT_WARNING') {
-      badgeClass = 'badge-warning';
-      badgeText = 'DRIFT DETECTED';
-    }
-
-    return `
-      <div class="trace-item" data-id="${trace.id}">
-        <div class="trace-top">
-          <div class="trace-agent-name">
-            <span>${trace.agent}</span>
-            <span class="badge ${badgeClass}">${badgeText}</span>
-          </div>
-          <span class="trace-time">${trace.timestamp}</span>
-        </div>
-        <div class="trace-prompt">Prompt: "${escapeHtml(trace.prompt)}"</div>
-        <div class="trace-meta-row">
-          <div class="trace-meta-item"><span>Model:</span> <strong>${trace.model}</strong></div>
-          <div class="trace-meta-item"><span>Tokens:</span> <strong>${trace.tokens.toLocaleString()}</strong></div>
-          <div class="trace-meta-item"><span>Cost:</span> <strong class="text-emerald">$${trace.cost.toFixed(3)}</strong></div>
-          <div class="trace-meta-item"><span>Hops:</span> <strong>${trace.hops} steps</strong></div>
-          <div class="trace-meta-item"><span>Latency:</span> <strong>${trace.latency}</strong></div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  // Attach click listeners to open trace modal
-  container.querySelectorAll('.trace-item').forEach(item => {
-    item.addEventListener('click', () => {
-      const traceId = item.dataset.id;
-      openTraceModal(traceId);
+    const stats = el('div', {
+      style: 'display:grid; grid-template-columns:repeat(auto-fit, minmax(120px,1fr)); gap:0.75rem; margin-bottom:1.25rem;',
     });
-  });
-
-  // Filter change
-  const filterSelect = document.getElementById('filterAgentSelect');
-  if (filterSelect && !filterSelect.dataset.bound) {
-    filterSelect.dataset.bound = 'true';
-    filterSelect.addEventListener('change', (e) => {
-      renderTraces(e.target.value);
-    });
-  }
-
-  // Refresh button
-  const refreshBtn = document.getElementById('refreshTracesBtn');
-  if (refreshBtn && !refreshBtn.dataset.bound) {
-    refreshBtn.dataset.bound = 'true';
-    refreshBtn.addEventListener('click', async () => {
-      refreshBtn.disabled = true;
-      showToast('Syncing telemetry traces from edge API...', 'indigo');
-      await syncTracesFromApi();
-      refreshBtn.disabled = false;
-      showToast('Telemetry traces synced from edge ingestion', 'emerald');
-      renderTraces(filterSelect ? filterSelect.value : 'all');
-    });
-  }
-}
-
-/* ==========================================================================
-   Trace Details Modal
-   ========================================================================== */
-function setupTraceModal() {
-  const dialog = document.getElementById('traceModal');
-  const closeBtn = document.getElementById('closeTraceBtn');
-  if (closeBtn && dialog) {
-    closeBtn.addEventListener('click', () => dialog.close());
-  }
-}
-
-async function openTraceModal(traceId) {
-  let trace = state.traces.find(t => t.id === traceId);
-  const dialog = document.getElementById('traceModal');
-  const title = document.getElementById('traceModalTitle');
-  const badge = document.getElementById('traceModalBadge');
-  const body = document.getElementById('traceModalBody');
-
-  if (!trace || !dialog) return;
-
-  // If steps are not loaded yet, fetch dynamically from the API
-  if (!trace.steps || trace.steps.length === 0) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/v1/telemetry/traces/${traceId}`, {
-        headers: { 'Authorization': `Bearer ${DEMO_API_KEY}` }
-      });
-      if (res.ok) {
-        const full = await res.json();
-        trace.steps = (full.steps || []).map(s => ({
-          type: s.step_type,
-          title: s.title,
-          content: s.content,
-          tool_call: s.tool_call
-        }));
-        if (full.guardrail_reason) {
-          trace.guardrailReason = full.guardrail_reason;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not load steps from API, falling back to local view', e);
-    }
-  }
-
-  title.textContent = `Trace: ${trace.agent} (${trace.id})`;
-  badge.textContent = trace.status;
-  badge.className = `badge ${trace.status === 'CIRCUIT_KILLED' ? 'badge-danger' : trace.status === 'DRIFT_WARNING' ? 'badge-warning' : 'badge-success'}`;
-
-  const stepsList = trace.steps && trace.steps.length > 0 
-    ? trace.steps.map((s, idx) => `
-        <div class="tree-node ${s.type === 'tool' ? 'tool-call' : s.type === 'guardrail' ? 'guardrail-trigger' : s.type === 'final' ? 'final-answer' : ''}">
-          <div class="tree-node-header">
-            <span class="node-type-badge ${s.type === 'tool' ? 'node-tool' : s.type === 'guardrail' ? 'node-guardrail' : s.type === 'final' ? 'node-final' : 'node-thought'}">
-              Step ${idx + 1}: ${s.type.toUpperCase()}
-            </span>
-            <span class="node-meta">${s.title}</span>
-          </div>
-          <div class="node-content">${escapeHtml(s.content)}</div>
-          ${s.tool_call ? `<pre class="node-code"><code>${escapeHtml(s.tool_call)}</code></pre>` : ''}
-        </div>
-      `).join('')
-    : `<div class="empty-state" style="min-height: 120px;"><p>No granular hop steps recorded for this trace.</p></div>`;
-
-  body.innerHTML = `
-    <div style="margin-bottom: 16px; background: rgba(255,255,255,0.03); padding: 12px; border-radius: 6px;">
-      <div style="font-size: 0.82rem; color: #94a3b8; margin-bottom: 4px;"><strong>Initial Objective:</strong></div>
-      <div style="color: #ffffff; font-size: 0.88rem;">"${escapeHtml(trace.prompt)}"</div>
-      ${trace.guardrailReason ? `
-        <div style="margin-top: 10px; background: rgba(244, 63, 94, 0.12); border-left: 3px solid #f43f5e; padding: 8px 12px; border-radius: 4px; font-size: 0.78rem; color: #fda4af;">
-          <strong>🚨 Guardrail Triggered:</strong> ${escapeHtml(trace.guardrailReason)}
-        </div>
-      ` : ''}
-      <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 0.76rem; font-family: monospace; color: #64748b; flex-wrap: wrap;">
-        <span>Model: <strong style="color:#ffffff;">${trace.model}</strong></span>
-        <span>Tokens: <strong style="color:#ffffff;">${trace.tokens.toLocaleString()}</strong></span>
-        <span>Cost: <strong style="color:#10b981;">$${trace.cost.toFixed(4)}</strong></span>
-        <span>Duration: <strong style="color:#ffffff;">${trace.latency}</strong></span>
-        <span>Hops: <strong style="color:#ffffff;">${trace.hops}</strong></span>
-      </div>
-    </div>
-
-    <h4 style="font-size: 0.9rem; color: #ffffff; margin-bottom: 12px;">Step-by-Step Execution Graph:</h4>
-    <div style="display: flex; flex-direction: column; gap: 10px;">
-      ${stepsList}
-    </div>
-  `;
-
-  dialog.showModal();
-}
-
-/* ==========================================================================
-   Live Agent Simulator & Sandbox
-   ========================================================================== */
-function setupSimulator() {
-  const startBtn = document.getElementById('startSimulationBtn');
-  const resetBtn = document.getElementById('resetSimulationBtn');
-  const tree = document.getElementById('executionTree');
-  const emptyState = document.getElementById('simEmptyState');
-
-  const streamStatus = document.getElementById('streamStatus');
-  const streamStatusText = document.getElementById('streamStatusText');
-
-  const liveElapsed = document.getElementById('liveElapsed');
-  const liveStepCount = document.getElementById('liveStepCount');
-  const liveTokens = document.getElementById('liveTokens');
-  const liveCost = document.getElementById('liveCost');
-  const liveGuardrailStatus = document.getElementById('liveGuardrailStatus');
-
-  const agentPreset = document.getElementById('simAgentPreset');
-  const userPrompt = document.getElementById('simUserPrompt');
-
-  // Preset switch
-  if (agentPreset && userPrompt) {
-    agentPreset.addEventListener('change', () => {
-      const val = agentPreset.value;
-      if (val === 'market_research') {
-        userPrompt.value = 'Analyze Q3 semiconductor supply chain constraints, fetch 3 recent SEC 10-K filings, compare gross margins, and summarize risk factors into a formatted portfolio report.';
-      } else if (val === 'customer_support') {
-        userPrompt.value = 'User query: "My invoice #INV-9281 shows a charge for $4,200 but my enterprise contract signed on Oct 1 guarantees $3,800. Also my credit card ending in 4102 was charged twice."';
-      } else if (val === 'code_refactor') {
-        userPrompt.value = 'Refactor legacy synchronous FastAPI handlers in 14 endpoint files to use asynchronous async/await SQLAlchemy 2.0 ORM sessions and update test suites.';
-      } else {
-        userPrompt.value = 'Custom prompt: Execute multi-step research and verify against safety benchmarks.';
-      }
-    });
-  }
-
-  startBtn.addEventListener('click', () => {
-    if (state.simulationRunning) return;
-
-    // Read toggles
-    const chaosLoop = document.getElementById('chaosInfiniteLoop').checked;
-    const chaosDrift = document.getElementById('chaosDrift').checked;
-    const chaosBudget = document.getElementById('chaosBudgetSpike').checked;
-
-    state.simulationRunning = true;
-    startBtn.disabled = true;
-    startBtn.style.opacity = '0.5';
-    resetBtn.style.display = 'inline-block';
-
-    emptyState.style.display = 'none';
-    tree.innerHTML = '';
-
-    streamStatus.querySelector('.status-indicator').className = 'status-indicator running';
-    streamStatusText.textContent = 'Agent executing live multi-step hops...';
-
-    let elapsed = 0;
-    let stepCount = 0;
-    let tokens = 0;
-    let cost = 0.000;
-    liveGuardrailStatus.textContent = 'SECURE';
-    liveGuardrailStatus.className = 'stat-pill-val text-emerald';
-
-    // Timer
-    const startTime = Date.now();
-    state.simTimerInterval = setInterval(() => {
-      elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      liveElapsed.textContent = `${elapsed}s`;
-    }, 100);
-
-    // Sequence of steps
-    const simulationSequence = [
-      {
-        type: 'thought',
-        title: 'Step 1: Goal Planning & Task Decomposition',
-        content: `Analyzing objective: "${userPrompt.value.substring(0, 75)}...". Initiating tool chain.`,
-        tokensAdd: 1850,
-        costAdd: 0.008
-      },
-      {
-        type: 'tool',
-        title: 'Step 2: Tool Call → search_enterprise_kb(query="filings and margins")',
-        content: 'Vector similarity search executed across 84 documents in 142ms. 3 matches retrieved.',
-        code: '{"query": "filings and margins", "limit": 3, "score_threshold": 0.85}',
-        tokensAdd: 6200,
-        costAdd: 0.024
-      },
-      {
-        type: 'thought',
-        title: 'Step 3: Intermediate Reflection & Gap Analysis',
-        content: 'Retrieved filings indicate 2 additional subsidiary entities requiring targeted lookup.',
-        tokensAdd: 2400,
-        costAdd: 0.012
-      }
+    const metrics = [
+      ['Uncached Input', trace.input_tokens.toLocaleString()],
+      ['Cache Read Hits', trace.cached_input_tokens.toLocaleString()],
+      ['Output (Reason)', `${trace.output_tokens.toLocaleString()} (${trace.reasoning_tokens})`],
+      ['Actual Cost', fmtUsd(trace.cost_usd, 4)],
+      ['Saved via Guardrail', fmtUsd(trace.estimated_savings_usd, 4)],
     ];
+    for (const [k, v] of metrics) {
+      const box = el('div', { style: 'border:1px solid var(--line); border-radius:8px; padding:0.625rem 0.75rem;' });
+      box.appendChild(el('div', { className: 'subtle-text', style: 'font-size:0.75rem;' }, k));
+      box.appendChild(el('strong', { className: 'tabular' }, v));
+      stats.appendChild(box);
+    }
+    body.appendChild(stats);
 
-    // Branching based on chaos modes
-    if (chaosBudget) {
-      simulationSequence.push({
-        type: 'tool',
-        title: 'Step 4: Tool Call → fetch_unbounded_raw_filings(scope="all_years")',
-        content: 'Incoming context stream expanding rapidly (over 85,000 tokens detected). Cost per run approaching budget ceiling.',
-        tokensAdd: 82000,
-        costAdd: 0.780
+    if (trace.guardrail_reason) {
+      const reasonBox = el('div', {
+        style: 'background: var(--accent-soft); color: var(--accent-ink); padding:0.75rem 1rem; border-radius:8px; margin-bottom:1.25rem; font-size:0.875rem;',
       });
-      simulationSequence.push({
-        type: 'guardrail',
-        title: '🚨 CIRCUIT BREAKER TRIPPED: Single-Run Cost Ceiling ($0.75)',
-        content: 'Cumulative run cost crossed $0.75 threshold ($0.824). Execution forcibly aborted in 4ms to preserve AI budget. Automated incident logged.',
-        isBreaker: true
-      });
-    } else if (chaosLoop) {
-      simulationSequence.push({
-        type: 'tool',
-        title: 'Step 4: Tool Call → query_filings(status="pending")',
-        content: 'No new data returned. Agent executing re-try attempt.',
-        tokensAdd: 4500,
-        costAdd: 0.018
-      });
-      simulationSequence.push({
-        type: 'tool',
-        title: 'Step 5: Tool Call → query_filings(status="pending")',
-        content: 'Identical parameters detected. Agent is trapped in recursive loop.',
-        tokensAdd: 4500,
-        costAdd: 0.018
-      });
-      simulationSequence.push({
-        type: 'guardrail',
-        title: '🚨 CIRCUIT BREAKER TRIPPED: Infinite Recursion Sentinel',
-        content: 'Repetitive tool invocation and recursion threshold reached (Step 6). Process killed in 6ms. Saved estimated $14.20 in runaway recursive tokens.',
-        isBreaker: true
-      });
-    } else if (chaosDrift) {
-      simulationSequence.push({
-        type: 'tool',
-        title: 'Step 4: Tool Call → summarize_financial_risks()',
-        content: 'Tool returned standard compliance text.',
-        tokensAdd: 4100,
-        costAdd: 0.016
-      });
-      simulationSequence.push({
-        type: 'final',
-        title: 'Step 5: Final Output Generated (Drift Detected)',
-        content: 'Output generated but fails golden benchmark assertion: "Hallucinated non-existent 12% revenue margin expansion without source citation." Drift score: 0.79 (Alert dispatched).',
-        isDrift: true,
-        tokensAdd: 3200,
-        costAdd: 0.014
-      });
+      reasonBox.appendChild(el('strong', {}, 'Guardrail Reason: '));
+      reasonBox.appendChild(document.createTextNode(trace.guardrail_reason));
+      body.appendChild(reasonBox);
+    }
+
+    body.appendChild(el('h3', { className: 'card-title', style: 'margin-bottom:0.625rem;' }, 'Step Timeline'));
+    const stepsList = el('div', { style: 'display:flex; flex-direction:column; gap:0.5rem;' });
+    const steps = trace.steps || [];
+    if (steps.length === 0) {
+      stepsList.appendChild(el('p', { className: 'subtle-text' }, `Prompt: ${trace.prompt}`));
     } else {
-      simulationSequence.push({
-        type: 'tool',
-        title: 'Step 4: Tool Call → compile_executive_summary()',
-        content: 'Synthesizing verified margin metrics into structured markdown report.',
-        tokensAdd: 4200,
-        costAdd: 0.018
-      });
-      simulationSequence.push({
-        type: 'final',
-        title: 'Step 5: Final Response Completed',
-        content: 'Analysis successfully validated. All assertions passed. Zero drift detected. Telemetry recorded.',
-        tokensAdd: 2800,
-        costAdd: 0.012
-      });
+      for (const s of steps) {
+        const card = el('div', { style: 'border:1px solid var(--line); border-radius:8px; padding:0.75rem;' });
+        const head = el('div', { style: 'display:flex; justify-content:space-between; gap:0.5rem; margin-bottom:0.25rem;' });
+        head.appendChild(el('strong', { style: 'font-size:0.875rem;' }, `${s.step_index}. ${s.title}`));
+        head.appendChild(el('span', { className: 'badge badge-neutral mono' }, s.step_type));
+        card.appendChild(head);
+        card.appendChild(el('p', { className: 'muted', style: 'font-size:0.8125rem; white-space:pre-wrap;' }, s.content));
+        stepsList.appendChild(card);
+      }
     }
+    body.appendChild(stepsList);
 
-    let currentIndex = 0;
+    document.getElementById('traceDialog').showModal();
+  } catch (err) {
+    showToast(err.message, 'warn');
+  }
+}
 
-    function renderNextStep() {
-      if (currentIndex >= simulationSequence.length) {
-        // Complete
-        clearInterval(state.simTimerInterval);
-        state.simulationRunning = false;
-        startBtn.disabled = false;
-        startBtn.style.opacity = '1';
-        streamStatus.querySelector('.status-indicator').className = 'status-indicator ready';
-        streamStatusText.textContent = 'Execution run finished.';
-        showToast('Agent telemetry run completed and logged to dashboard', 'emerald');
-        return;
+function renderPolicyEditor(pol) {
+  if (!pol) return;
+  document.getElementById('polRunDegrade').value = pol.degrade_after_run_cost_usd;
+  document.getElementById('polRunMax').value = pol.max_run_cost_usd;
+  document.getElementById('polTenantDegrade').value = pol.tenant_daily_degrade_usd;
+  document.getElementById('polTenantCap').value = pol.tenant_daily_cap_usd;
+  document.getElementById('polMaxHops').value = pol.max_hops;
+  document.getElementById('polDupCalls').value = pol.max_duplicate_calls;
+  document.getElementById('polKillLoop').checked = Boolean(pol.kill_on_infinite_loop);
+
+  const list = document.getElementById('fallbackMapList');
+  list.replaceChildren();
+  const entries = Object.entries(pol.model_fallback_map || {});
+  for (const [src, dst] of entries) {
+    const row = el('div', {
+      style: 'display:flex; justify-content:space-between; align-items:center; padding:0.5625rem 0.75rem; border:1px solid var(--line); border-radius:8px; font-size:0.8125rem;',
+    });
+    row.appendChild(el('code', { className: 'mono' }, src));
+    row.appendChild(el('span', { className: 'subtle-text' }, '→'));
+    row.appendChild(el('code', { className: 'mono', style: 'color: var(--ok);' }, dst));
+    list.appendChild(row);
+  }
+}
+
+function renderAlerts(alerts) {
+  const container = document.getElementById('alertsList');
+  container.replaceChildren();
+
+  if (!alerts || alerts.length === 0) {
+    container.appendChild(el('p', { className: 'subtle-text' }, 'No active guardrail alerts.'));
+    return;
+  }
+
+  for (const a of alerts) {
+    const item = el('div', { className: 'alert-item' });
+    const left = el('div');
+    left.appendChild(statusBadge(a.severity === 'critical' ? 'CIRCUIT_KILLED' : 'DEGRADED'));
+    left.appendChild(el('p', { style: 'font-size:0.875rem; margin-top:0.375rem;' }, a.message));
+    left.appendChild(el('span', { className: 'subtle-text mono' }, `tenant: ${a.tenant_id} · agent: ${a.agent_id}`));
+
+    const btn = el('button', { type: 'button', className: 'btn btn-xs btn-secondary' }, 'Resolve');
+    btn.addEventListener('click', async () => {
+      await apiFetch(`/v1/alerts/${a.id}/resolve`, { method: 'PATCH' });
+      showToast('Alert resolved', 'ok');
+      await loadAllDashboardData();
+    });
+
+    item.append(left, btn);
+    container.appendChild(item);
+  }
+}
+
+// ── Simulate Realistic Smart Degradation Run ──────────────────────────────────
+
+async function simulateDegradedTrace() {
+  const tenants = ['acme_corp', 'globex_inc', 'northstar_ops', 'whale_saas'];
+  const tid = tenants[Math.floor(Math.random() * tenants.length)];
+  const isLoop = Math.random() < 0.3;
+
+  const payload = isLoop
+    ? {
+        tenant_id: tid,
+        agent_id: 'sql-analyst',
+        original_model: 'gpt-4o',
+        executed_model: 'gpt-4o',
+        was_degraded: false,
+        prompt: 'Analyze monthly recurring cohort retention across Stripe tables',
+        status: 'CIRCUIT_KILLED',
+        input_tokens: 9400,
+        cached_input_tokens: 4200,
+        output_tokens: 1850,
+        cost_usd: 0.0472,
+        estimated_savings_usd: 0.48,
+        latency_ms: 1420,
+        hops: 4,
+        circuit_tripped: true,
+        guardrail_reason: "Repetitive tool loop detected (3x identical calls): sql_exec('SELECT * FROM subscriptions')",
+        steps: [
+          { step_index: 1, step_type: 'thought', title: 'Workflow Initiated', content: `Tenant=${tid} cohort query` },
+          { step_index: 2, step_type: 'tool', title: 'sql_exec() timeout #1', content: 'Query timed out, retrying' },
+          { step_index: 3, step_type: 'guardrail', title: 'Loop Halted in <1ms', content: 'Prevented $0.48 overnight burn spike.' },
+        ],
       }
+    : {
+        tenant_id: tid,
+        agent_id: 'support-copilot',
+        original_model: 'claude-sonnet-4-20250514',
+        executed_model: 'claude-3-5-haiku-latest',
+        was_degraded: true,
+        prompt: 'Resolve multi-step invoice refund dispute and cite billing SLA clauses',
+        status: 'DEGRADED',
+        input_tokens: 18500,
+        cached_input_tokens: 14000,
+        cache_creation_tokens: 0,
+        output_tokens: 3400,
+        cost_usd: 0.0295,
+        estimated_savings_usd: 0.0812,
+        latency_ms: 1890,
+        hops: 6,
+        circuit_tripped: false,
+        guardrail_reason: 'Run crossed $0.25 soft cap; stepped down Sonnet -> Haiku sticky to preserve cache',
+        steps: [
+          { step_index: 1, step_type: 'tool', title: 'Anthropic (claude-sonnet-4)', content: 'Steps 1-3 analyzed invoice ledger.' },
+          { step_index: 2, step_type: 'degrade', title: 'Smart Degradation Activated', content: 'Soft cap crossed. Stepped down Sonnet -> claude-3-5-haiku-latest.' },
+          { step_index: 3, step_type: 'final', title: 'Anthropic (claude-3-5-haiku-latest)', content: 'Final reply streamed & cached. Saved $0.0812.' },
+        ],
+      };
 
-      const step = simulationSequence[currentIndex];
-      currentIndex++;
-      stepCount++;
+  try {
+    await apiFetch('/v1/telemetry/traces', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    showToast(`Logged live trace for tenant '${tid}'!`, 'ok');
+    await loadAllDashboardData();
+  } catch (err) {
+    showToast(err.message, 'warn');
+  }
+}
 
-      tokens += (step.tokensAdd || 0);
-      cost += (step.costAdd || 0);
+// ── Event Wiring ──────────────────────────────────────────────────────────────
 
-      liveStepCount.textContent = stepCount;
-      liveTokens.textContent = tokens.toLocaleString();
-      liveCost.textContent = `$${cost.toFixed(4)}`;
+document.addEventListener('DOMContentLoaded', () => {
+  initDialogLightDismiss();
+  initValidationFeedback();
 
-      // Render node in tree
-      const nodeEl = document.createElement('div');
-      nodeEl.className = `tree-node ${step.type === 'tool' ? 'tool-call' : step.type === 'guardrail' ? 'guardrail-trigger' : step.type === 'final' ? 'final-answer' : ''}`;
-      
-      let badgeClass = 'node-thought';
-      if (step.type === 'tool') badgeClass = 'node-tool';
-      if (step.type === 'guardrail') badgeClass = 'node-guardrail';
-      if (step.type === 'final') badgeClass = 'node-final';
+  document.getElementById('modeSignupBtn').addEventListener('click', () => switchAuthMode('signup'));
+  document.getElementById('modeLoginBtn').addEventListener('click', () => switchAuthMode('login'));
 
-      nodeEl.innerHTML = `
-        <div class="tree-node-header">
-          <span class="node-type-badge ${badgeClass}">${step.type.toUpperCase()}</span>
-          <span class="node-meta">${step.title}</span>
-        </div>
-        <div class="node-content">${escapeHtml(step.content)}</div>
-        ${step.code ? `<pre class="node-code"><code>${escapeHtml(step.code)}</code></pre>` : ''}
-      `;
-
-      tree.appendChild(nodeEl);
-      tree.scrollTop = tree.scrollHeight;
-
-      if (step.isBreaker) {
-        liveGuardrailStatus.textContent = 'KILLED BY CIRCUIT BREAKER';
-        liveGuardrailStatus.className = 'stat-pill-val text-rose';
-        showToast('Guardrail Triggered: Run auto-killed in <10ms to protect budget', 'rose');
-        
-        // Add to telemetry traces
-        state.traces.unshift({
-          id: `TR-${Math.floor(8900 + Math.random() * 200)}`,
-          agent: agentPreset.options[agentPreset.selectedIndex].text.split('(')[0].trim(),
-          agentKey: 'custom',
-          model: 'Claude 3.7 Sonnet',
-          prompt: userPrompt.value,
-          status: 'CIRCUIT_KILLED',
-          tokens: tokens,
-          cost: cost,
-          latency: `${liveElapsed.textContent}`,
-          hops: stepCount,
-          timestamp: 'Just now',
-          steps: simulationSequence.slice(0, currentIndex)
-        });
-        renderTraces();
-
-        // Increment anomalies intercepted metric
-        state.metrics.anomalies++;
-        const anomalyCounter = document.getElementById('metricAnomalies');
-        if (anomalyCounter) anomalyCounter.textContent = state.metrics.anomalies;
-
-        // Also add row to guardrails table
-        addGuardrailLogRow(agentPreset.value, 'Recursive Loop Intercept', 'Aborted Execution in 6ms', `${tokens.toLocaleString()} tokens`, '+$0.68');
-      } else if (step.isDrift) {
-        liveGuardrailStatus.textContent = 'DRIFT DETECTED';
-        liveGuardrailStatus.className = 'stat-pill-val text-amber';
-      }
-
-      // Schedule next step with realistic pacing
-      const delay = step.type === 'tool' ? 1200 : 900;
-      setTimeout(renderNextStep, delay);
+  document.getElementById('signupForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('signupError');
+    errEl.textContent = '';
+    const btn = document.getElementById('signupSubmitBtn');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch('/v1/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({
+          team_name: document.getElementById('signupTeam').value,
+          email: document.getElementById('signupEmail').value,
+          password: document.getElementById('signupPassword').value,
+        }),
+      });
+      appState.token = res.session_token;
+      appState.fullApiKeyOnce = res.api_key || '';
+      localStorage.setItem(STORAGE_TOKEN_KEY, res.session_token);
+      showToast('Workspace created! Copy your live API key above.', 'ok');
+      await bootstrapSession();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally {
+      btn.disabled = false;
     }
-
-    renderNextStep();
   });
 
-  resetBtn.addEventListener('click', () => {
-    clearInterval(state.simTimerInterval);
-    state.simulationRunning = false;
-    startBtn.disabled = false;
-    startBtn.style.opacity = '1';
-    resetBtn.style.display = 'none';
-
-    emptyState.style.display = 'flex';
-    tree.innerHTML = '';
-    tree.appendChild(emptyState);
-
-    liveElapsed.textContent = '0.0s';
-    liveStepCount.textContent = '0';
-    liveTokens.textContent = '0';
-    liveCost.textContent = '$0.0000';
-    liveGuardrailStatus.textContent = 'SECURE';
-    liveGuardrailStatus.className = 'stat-pill-val text-emerald';
-
-    streamStatus.querySelector('.status-indicator').className = 'status-indicator ready';
-    streamStatusText.textContent = 'Ready to execute';
-  });
-}
-
-function addGuardrailLogRow(agent, trigger, action, tokensSaved, costPreserved) {
-  const table = document.getElementById('guardrailLogsTable');
-  if (!table) return;
-
-  const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td>Just now</td>
-    <td><code>${agent}</code></td>
-    <td><span class="badge badge-danger">${trigger}</span></td>
-    <td>${action}</td>
-    <td>${tokensSaved}</td>
-    <td class="text-emerald">${costPreserved}</td>
-  `;
-  table.prepend(tr);
-}
-
-/* ==========================================================================
-   Drift Sentinel Tab
-   ========================================================================== */
-function setupDriftSentinel() {
-  const auditBtn = document.getElementById('runDriftAuditBtn');
-  if (!auditBtn) return;
-
-  auditBtn.addEventListener('click', () => {
-    auditBtn.disabled = true;
-    auditBtn.innerHTML = '<span class="pulse-dot"></span> Evaluating 50 Golden Test Cases...';
-
-    setTimeout(() => {
-      auditBtn.disabled = false;
-      auditBtn.innerHTML = `
-        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
-        Run Drift Audit
-      `;
-      showToast('Drift Audit Completed: 49/50 test cases passed. 1 tone regression flagged.', 'emerald');
-    }, 1400);
-  });
-}
-
-/* ==========================================================================
-   Guardrails & Circuit Breakers Tab
-   ========================================================================== */
-function setupGuardrails() {
-  const maxHops = document.getElementById('ruleMaxHops');
-  const maxCost = document.getElementById('ruleMaxCost');
-
-  if (maxHops) {
-    maxHops.addEventListener('change', (e) => {
-      state.rules.maxHops = parseInt(e.target.value, 10);
-      showToast(`Recursion boundary updated to max ${state.rules.maxHops} hops`, 'indigo');
-    });
-  }
-
-  if (maxCost) {
-    maxCost.addEventListener('change', (e) => {
-      state.rules.maxCost = parseFloat(e.target.value);
-      showToast(`Cost ceiling updated to $${state.rules.maxCost.toFixed(2)}/run`, 'indigo');
-    });
-  }
-}
-
-/* ==========================================================================
-   Integrations & SDK Snippets
-   ========================================================================== */
-function setupIntegrations() {
-  const sdkTabs = document.querySelectorAll('.sdk-tab');
-  const codeDisplay = document.getElementById('sdkCodeDisplay');
-  const copyCodeBtn = document.getElementById('copyCodeBtn');
-
-  sdkTabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      sdkTabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-
-      const lang = tab.dataset.lang;
-      if (codeDisplay && SDK_SNIPPETS[lang]) {
-        codeDisplay.innerHTML = `<code class="language-${lang}">${escapeHtml(SDK_SNIPPETS[lang])}</code>`;
-      }
-    });
-  });
-
-  if (copyCodeBtn && codeDisplay) {
-    copyCodeBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(codeDisplay.textContent).then(() => {
-        const orig = copyCodeBtn.innerHTML;
-        copyCodeBtn.innerHTML = '<span>✓ Copied!</span>';
-        setTimeout(() => { copyCodeBtn.innerHTML = orig; }, 1800);
-        showToast('SDK snippet copied to clipboard', 'emerald');
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    const btn = document.getElementById('loginSubmitBtn');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch('/v1/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: document.getElementById('loginEmail').value,
+          password: document.getElementById('loginPassword').value,
+        }),
       });
-    });
-  }
-
-  // API Key Visibility & Copy
-  const apiKeyInput = document.getElementById('apiKeyInput');
-  const toggleKeyBtn = document.getElementById('toggleApiKeyVisibility');
-  const copyKeyBtn = document.getElementById('copyApiKeyBtn');
-
-  if (toggleKeyBtn && apiKeyInput) {
-    toggleKeyBtn.addEventListener('click', () => {
-      if (apiKeyInput.type === 'password') {
-        apiKeyInput.type = 'text';
-        toggleKeyBtn.textContent = 'Hide';
-      } else {
-        apiKeyInput.type = 'password';
-        toggleKeyBtn.textContent = 'Reveal';
-      }
-    });
-  }
-
-  if (copyKeyBtn && apiKeyInput) {
-    copyKeyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(apiKeyInput.value).then(() => {
-        showToast('API Key copied to clipboard', 'emerald');
-      });
-    });
-  }
-
-  // Webhook Test Button
-  const testWebhookBtn = document.getElementById('testWebhookBtn');
-  const webhookStatusMsg = document.getElementById('webhookStatusMsg');
-
-  if (testWebhookBtn) {
-    testWebhookBtn.addEventListener('click', () => {
-      testWebhookBtn.disabled = true;
-      testWebhookBtn.textContent = 'Dispatching payload...';
-
-      setTimeout(() => {
-        testWebhookBtn.disabled = false;
-        testWebhookBtn.innerHTML = `
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"></path><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          Send Test Alert Ping
-        `;
-        webhookStatusMsg.textContent = 'HTTP 200 OK — Alert received by Slack endpoint';
-        webhookStatusMsg.style.color = '#10b981';
-        showToast('Slack Webhook delivered: [Alert] Circuit Breaker ping verified', 'emerald');
-      }, 900);
-    });
-  }
-}
-
-/* ==========================================================================
-   Pricing, ROI Calculator & Upgrade Modal
-   ========================================================================== */
-function setupPricingAndRoi() {
-  // Plan selection buttons
-  const planButtons = document.querySelectorAll('.select-plan-btn');
-  planButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const plan = btn.dataset.plan;
-      if (plan === 'starter') {
-        openCheckoutModal('starter', 'Starter Sentinel ($49/month)', '$49.00');
-      } else if (plan === 'pro') {
-        openCheckoutModal('pro', 'Professional Ops ($99/month)', '$99.00');
-      } else if (plan === 'scale') {
-        openCheckoutModal('scale', 'Scale Sentinel ($249/month)', '$249.00');
-      }
-    });
+      appState.token = res.session_token;
+      appState.fullApiKeyOnce = '';
+      localStorage.setItem(STORAGE_TOKEN_KEY, res.session_token);
+      await bootstrapSession();
+    } catch (err) {
+      errEl.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
-  // ROI Calculator
-  const calcRuns = document.getElementById('calcAgentRuns');
-  const calcAvgCost = document.getElementById('calcAvgCost');
-  const calcLoopRate = document.getElementById('calcLoopRate');
+  document.getElementById('enterDemoSandboxBtn').addEventListener('click', async () => {
+    appState.token = DEMO_KEY;
+    appState.fullApiKeyOnce = DEMO_KEY;
+    localStorage.setItem(STORAGE_TOKEN_KEY, DEMO_KEY);
+    await bootstrapSession();
+  });
 
-  const runsVal = document.getElementById('calcAgentRunsVal');
-  const costVal = document.getElementById('calcAvgCostVal');
-  const loopVal = document.getElementById('calcLoopRateVal');
-  const savedDollars = document.getElementById('calcSavedDollars');
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_TOKEN_KEY);
+    appState.token = '';
+    appState.fullApiKeyOnce = '';
+    appState.profile = null;
+    setAuthenticatedUI(false);
+  });
 
-  function updateRoi() {
-    if (!calcRuns || !calcAvgCost || !calcLoopRate) return;
-
-    const runs = parseInt(calcRuns.value, 10);
-    const avgCost = parseFloat(calcAvgCost.value);
-    const loopRate = parseFloat(calcLoopRate.value) / 100;
-
-    runsVal.textContent = `${runs.toLocaleString()} runs/month`;
-    costVal.textContent = `$${avgCost.toFixed(2)} / run`;
-    loopVal.textContent = `${(loopRate * 100).toFixed(1)}% runaway loops`;
-
-    // Calculation: When an agent loops rogue, it typically consumes 12x the standard single-hop cost
-    const rogueMultiplier = 12;
-    const runawayRuns = runs * loopRate;
-    const wastedCostMonthly = runawayRuns * (avgCost * rogueMultiplier);
-
-    savedDollars.textContent = `$${Math.round(wastedCostMonthly).toLocaleString()} / mo`;
-  }
-
-  if (calcRuns) calcRuns.addEventListener('input', updateRoi);
-  if (calcAvgCost) calcAvgCost.addEventListener('input', updateRoi);
-  if (calcLoopRate) calcLoopRate.addEventListener('input', updateRoi);
-
-  const calcUpgradeBtn = document.getElementById('calcUpgradeBtn');
-  if (calcUpgradeBtn) {
-    calcUpgradeBtn.addEventListener('click', () => {
-      openCheckoutModal('pro', 'Professional Ops ($99/month)', '$99.00');
+  // Tab navigation
+  for (const tabBtn of document.querySelectorAll('.dash-tab')) {
+    tabBtn.addEventListener('click', () => {
+      for (const b of document.querySelectorAll('.dash-tab')) b.classList.remove('active');
+      for (const p of document.querySelectorAll('.dash-pane')) p.classList.remove('active');
+      tabBtn.classList.add('active');
+      document.getElementById(`pane-${tabBtn.dataset.pane}`).classList.add('active');
     });
   }
 
-  // Checkout Dialog setup
-  const checkoutDialog = document.getElementById('checkoutDialog');
-  const closeCheckoutBtn = document.getElementById('closeCheckoutBtn');
-  const checkoutForm = document.getElementById('checkoutForm');
+  document.getElementById('copyFullKeyBtn').addEventListener('click', async () => {
+    if (!appState.fullApiKeyOnce) return;
+    await navigator.clipboard.writeText(appState.fullApiKeyOnce);
+    showToast('API Key copied to clipboard', 'ok');
+  });
 
-  if (closeCheckoutBtn && checkoutDialog) {
-    closeCheckoutBtn.addEventListener('click', () => checkoutDialog.close());
-  }
+  document.getElementById('copySdkSnippetBtn').addEventListener('click', async () => {
+    const txt = document.getElementById('sdkSnippetPre').textContent;
+    await navigator.clipboard.writeText(txt);
+    showToast('Python SDK snippet copied', 'ok');
+  });
 
-  if (checkoutForm && checkoutDialog) {
-    checkoutForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const submitBtn = document.getElementById('submitPaymentBtn');
-      const companyName = document.getElementById('companyName').value;
-      const billingEmail = document.getElementById('billingEmail').value;
-      const plan = state.currentSelectedPlan || 'pro';
+  document.getElementById('sendTestTraceBtn').addEventListener('click', simulateDegradedTrace);
+  document.getElementById('refreshDataBtn').addEventListener('click', async () => {
+    await loadAllDashboardData();
+    showToast('Synced with backend');
+  });
 
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Contacting Stripe & Provisioning...';
+  document.getElementById('traceTenantFilter').addEventListener('change', async () => {
+    appState.traces = await apiFetch(buildTracesQuery());
+    renderTracesTable(appState.traces);
+  });
+  document.getElementById('traceStatusFilter').addEventListener('change', async () => {
+    appState.traces = await apiFetch(buildTracesQuery());
+    renderTracesTable(appState.traces);
+  });
 
+  document.getElementById('policyForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        degrade_after_run_cost_usd: parseFloat(document.getElementById('polRunDegrade').value),
+        max_run_cost_usd: parseFloat(document.getElementById('polRunMax').value),
+        tenant_daily_degrade_usd: parseFloat(document.getElementById('polTenantDegrade').value),
+        tenant_daily_cap_usd: parseFloat(document.getElementById('polTenantCap').value),
+        max_hops: parseInt(document.getElementById('polMaxHops').value, 10),
+        max_duplicate_calls: parseInt(document.getElementById('polDupCalls').value, 10),
+        kill_on_infinite_loop: document.getElementById('polKillLoop').checked,
+        model_fallback_map: appState.policy?.model_fallback_map || {},
+      };
+      appState.policy = await apiFetch('/v1/policies', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      renderPolicyEditor(appState.policy);
+      showToast('Policies updated. Live SDKs receive changes on next sync.', 'ok');
+    } catch (err) {
+      showToast(err.message, 'warn');
+    }
+  });
+
+  document.getElementById('rotateKeyBtn').addEventListener('click', async () => {
+    try {
+      const res = await apiFetch('/v1/auth/keys/rotate', { method: 'POST' });
+      appState.fullApiKeyOnce = res.api_key;
+      document.getElementById('rotatedKeyBox').classList.remove('hidden');
+      document.getElementById('rotatedKeyVal').textContent = res.api_key;
+      if (appState.profile) appState.profile.api_key_prefix = res.api_key_prefix;
+      renderProfile();
+      showToast('New API key issued', 'ok');
+    } catch (err) {
+      showToast(err.message, 'warn');
+    }
+  });
+
+  document.getElementById('webhookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const url = document.getElementById('slackWebhookInput').value.trim();
+      await apiFetch('/v1/auth/webhook', {
+        method: 'PATCH',
+        body: JSON.stringify({ slack_webhook_url: url }),
+      });
+      showToast('Slack webhook saved', 'ok');
+    } catch (err) {
+      showToast(err.message, 'warn');
+    }
+  });
+
+  document.getElementById('testWebhookBtn').addEventListener('click', async () => {
+    try {
+      await apiFetch('/v1/alerts/test-webhook', { method: 'POST' });
+      showToast('Test ping delivered to Slack!', 'ok');
+    } catch (err) {
+      showToast(err.message, 'warn');
+    }
+  });
+
+  document.getElementById('closeTraceDialogBtn').addEventListener('click', () => {
+    document.getElementById('traceDialog').close();
+  });
+
+  document.getElementById('upgradeBtn').addEventListener('click', () => {
+    document.getElementById('upgradeDialog').showModal();
+  });
+  document.getElementById('closeUpgradeDialogBtn').addEventListener('click', () => {
+    document.getElementById('upgradeDialog').close();
+  });
+
+  for (const btn of document.querySelectorAll('.checkout-plan-btn')) {
+    btn.addEventListener('click', async () => {
+      if (!appState.profile) return;
       try {
-        const res = await fetch(`${API_BASE_URL}/v1/billing/create-checkout-session`, {
+        const res = await apiFetch('/v1/billing/create-checkout-session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            plan: plan,
-            email: billingEmail,
-            team_name: companyName,
-            success_url: window.location.href.split('?')[0] + '?checkout=success',
-            cancel_url: window.location.href.split('?')[0] + '?checkout=cancelled'
-          })
+            plan: btn.dataset.plan,
+            email: appState.profile.email,
+            team_name: appState.profile.team_name,
+            success_url: `${window.location.origin}/dashboard.html?status=success`,
+            cancel_url: `${window.location.origin}/dashboard.html?status=cancelled`,
+          }),
         });
-
-        if (res.ok) {
-          const data = await res.json();
-          // If a real Stripe Hosted Checkout URL is returned, redirect directly
-          if (data.checkout_url && data.checkout_url.startsWith('https://checkout.stripe.com')) {
-            window.location.href = data.checkout_url;
-            return;
-          }
+        if (res.checkout_url && res.checkout_url.startsWith('https://checkout.stripe.com')) {
+          window.location.href = res.checkout_url;
+          return;
         }
+        document.getElementById('upgradeDialog').close();
+        showToast(`Workspace upgraded to ${res.plan.toUpperCase()} (sandbox mode)!`, 'ok');
+        await bootstrapSession();
       } catch (err) {
-        console.warn('Billing API offline, running in development simulation mode:', err);
+        showToast(err.message, 'warn');
       }
-
-      // Development / sandbox activation
-      setTimeout(() => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Activate Pro Sentinel ($99/mo)';
-        checkoutDialog.close();
-
-        // Update banner
-        const bannerText = document.querySelector('.mrr-badge');
-        if (bannerText) {
-          bannerText.textContent = 'Goal: $10k/mo MRR • 65/100 Teams Active (+$99)';
-        }
-
-        showToast('🎉 Subscription Active! 14-day trial started. API Key generated.', 'emerald');
-      }, 1000);
     });
   }
-}
 
-function openCheckoutModal(planId, label, price) {
-  state.currentSelectedPlan = planId;
-  const dialog = document.getElementById('checkoutDialog');
-  const labelEl = document.getElementById('selectedPlanLabel');
-  const priceEl = document.getElementById('selectedPlanPrice');
-  const titleEl = document.getElementById('checkoutModalTitle');
-  const submitBtn = document.getElementById('submitPaymentBtn');
-
-  if (!dialog) return;
-
-  if (labelEl) labelEl.textContent = label;
-  if (priceEl) priceEl.textContent = price;
-  if (titleEl) titleEl.textContent = `Upgrade to ${label.split('(')[0].trim()}`;
-  if (submitBtn) submitBtn.textContent = `Activate ${label.split('(')[0].trim()} (${price}/mo)`;
-
-  dialog.showModal();
-}
-
-/* ==========================================================================
-   Executive Report Export
-   ========================================================================== */
-function setupExportReport() {
-  const exportBtn = document.getElementById('exportReportBtn');
-  if (!exportBtn) return;
-
-  exportBtn.addEventListener('click', () => {
-    const reportData = {
-      product: "Brenducate",
-      report_type: "Executive AI Fleet Observability & Drift Audit",
-      generated_at: new Date().toISOString(),
-      active_monitored_agents: state.metrics.activeAgents,
-      daily_token_spend_usd: state.metrics.tokenSpend,
-      estimated_monthly_spend_usd: (state.metrics.tokenSpend * 30).toFixed(2),
-      estimated_prevented_token_waste_usd: 1728.00,
-      circuit_breaker_interceptions_today: state.metrics.anomalies,
-      p95_latency_seconds: state.metrics.latency,
-      prompt_drift_index: `${state.metrics.driftIndex}%`,
-      compliance_status: "PASSED_ZERO_PII_LEAKS",
-      recent_traces_summary: state.traces.map(t => ({
-        id: t.id,
-        agent: t.agent,
-        model: t.model,
-        status: t.status,
-        tokens: t.tokens,
-        cost: t.cost,
-        latency: t.latency
-      }))
-    };
-
-    const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Brenducate_Executive_Audit_${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    showToast('Executive Token & Drift Audit downloaded successfully', 'emerald');
-  });
-}
-
-/* ==========================================================================
-   Banner
-   ========================================================================== */
-function setupBanner() {
-  const bar = document.getElementById('announcementBar');
-  const closeBtn = document.getElementById('dismissBannerBtn');
-  if (closeBtn && bar) {
-    closeBtn.addEventListener('click', () => {
-      bar.style.display = 'none';
-    });
-  }
-}
-
-/* ==========================================================================
-   Dialog Light-Dismiss Polyfill Fallback (Modern Web Guidance)
-   ========================================================================== */
-function setupDialogPolyfillFallback() {
-  if (!('closedBy' in HTMLDialogElement.prototype)) {
-    const outside = (e, dialog) => {
-      const r = dialog.getBoundingClientRect();
-      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
-    };
-    for (const dialog of document.querySelectorAll('dialog[closedby="any"]')) {
-      let pressedOutside = false;
-      dialog.addEventListener('pointerdown', (e) => { pressedOutside = outside(e, dialog); });
-      dialog.addEventListener('pointerup', (e) => {
-        if (pressedOutside && outside(e, dialog)) dialog.close();
-      });
-    }
-  }
-}
-
-/* ==========================================================================
-   Toast Notification Helper
-   ========================================================================== */
-function showToast(message, variant = 'emerald') {
-  const container = document.getElementById('toastContainer');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast ${variant === 'rose' ? 'toast-rose' : variant === 'indigo' ? 'toast-indigo' : ''}`;
-  
-  let icon = '✓';
-  if (variant === 'rose') icon = '⚠️';
-  if (variant === 'indigo') icon = 'ℹ️';
-
-  toast.innerHTML = `<span>${icon}</span> <span>${escapeHtml(message)}</span>`;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateY(10px)';
-    toast.style.transition = 'all 200ms ease';
-    setTimeout(() => toast.remove(), 250);
-  }, 3200);
-}
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+  bootstrapSession();
+});

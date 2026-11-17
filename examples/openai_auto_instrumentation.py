@@ -1,95 +1,86 @@
 """
-AgentPulse Ops — OpenAI Auto-Instrumentation Example
+Brenducate — 1-Line Sync & Async OpenAI Auto-Instrumentation Example
 
-Demonstrates how wrapping an OpenAI client with 1 line of code automatically:
-  1. Tracks tokens (input/output) & computes dollar cost
-  2. Measures latency (ms)
-  3. Records step-by-step reasoning graphs
-  4. Triggers sub-millisecond circuit breakers if repetitive calls or budgets are breached
-
-Usage:
-  python3 examples/openai_auto_instrumentation.py
+Shows:
+  - Per-tenant scoping via `with sentinel.tenant("acme_corp"):`
+  - Automatic `stream_options={"include_usage": True}` injection
+  - Same-family Smart Degradation when soft budget cap is crossed
 """
 
-import sys
 import os
-import time
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../sdk"))
 
-from agentpulse import AgentPulse, CircuitBreaker, CircuitBreakerException, wrap_openai
+from brenducate import Brenducate, CircuitBreaker, wrap_openai
 
-# ── Mock OpenAI Client for Testing Without Live API Keys ──────────────────────
 
-class MockChoice:
+class _Msg:
     def __init__(self, content):
-        class Message:
-            def __init__(self, c):
-                self.content = c
-        self.message = Message(content)
+        self.content = content
 
-class MockUsage:
-    def __init__(self, prompt_tokens, completion_tokens):
+
+class _Choice:
+    def __init__(self, content):
+        self.message = _Msg(content)
+
+
+class _UsageDetails:
+    def __init__(self, cached_tokens=0, reasoning_tokens=0):
+        self.cached_tokens = cached_tokens
+        self.reasoning_tokens = reasoning_tokens
+
+
+class _Usage:
+    def __init__(self, prompt_tokens, completion_tokens, cached=0):
         self.prompt_tokens = prompt_tokens
         self.completion_tokens = completion_tokens
+        self.prompt_tokens_details = _UsageDetails(cached_tokens=cached)
+        self.completion_tokens_details = _UsageDetails()
 
-class MockCompletionResponse:
-    def __init__(self, content, prompt_tokens=1800, completion_tokens=420):
-        self.choices = [MockChoice(content)]
-        self.usage = MockUsage(prompt_tokens, completion_tokens)
 
-class MockCompletions:
+class _Resp:
+    def __init__(self, content, prompt_tokens=2400, completion_tokens=500, cached=1200):
+        self.choices = [_Choice(content)]
+        self.usage = _Usage(prompt_tokens, completion_tokens, cached=cached)
+
+
+class _MockCompletions:
     def create(self, model="gpt-4o", messages=None, **kwargs):
-        time.sleep(0.15)  # Simulate API latency
-        user_prompt = messages[-1]["content"] if messages else "Hello"
-        return MockCompletionResponse(
-            content=f"Summary of '{user_prompt[:40]}...': Processed successfully with verified references.",
-            prompt_tokens=2200,
-            completion_tokens=480
-        )
+        print(f"  [Provider received] model={model} | stream={kwargs.get('stream', False)}")
+        return _Resp(f"Executed cleanly on {model}.")
 
-class MockChat:
+
+class _MockChat:
     def __init__(self):
-        self.completions = MockCompletions()
+        self.completions = _MockCompletions()
 
-class MockOpenAIClient:
+
+class MockOpenAI:
     def __init__(self):
-        self.chat = MockChat()
+        self.chat = _MockChat()
 
-
-# ── Demonstration ─────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print("=" * 68)
-    print("  AgentPulse Ops — OpenAI 1-Line Auto-Instrumentation")
-    print("=" * 68)
-
-    pulse = AgentPulse(
-        api_key="ap_live_demo_key_00001",
+    sentinel = Brenducate(
+        api_key="br_live_demo_key_00001",
         base_url="http://localhost:8000",
-        environment="production",
-        verbose=True
+        verbose=True,
+        enable_background_sync=False,
     )
 
-    # 1-Line auto-instrumentation wrapper!
-    raw_client = MockOpenAIClient()
     client = wrap_openai(
-        raw_client,
-        pulse=pulse,
-        agent_id="openai-market-analyst",
-        circuit_breaker=CircuitBreaker(max_hops=5, max_cost_usd=0.20)
+        MockOpenAI(),
+        pulse=sentinel,
+        agent_id="support-agent",
+        circuit_breaker=CircuitBreaker(degrade_after_cost_usd=0.05, max_cost_usd=1.00),
     )
 
-    print("\nCalling client.chat.completions.create(...) with wrapped client:")
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a senior equity analyst."},
-            {"role": "user", "content": "Analyze semiconductor supply chain constraints in Q3."}
-        ]
-    )
+    with sentinel.tenant("acme_corp"):
+        r = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Summarize ticket #481"}],
+        )
+        print("Output:", r.choices[0].message.content)
 
-    print(f"\nResponse received: {response.choices[0].message.content}")
-    print(f"Usage tracked: {response.usage.prompt_tokens} prompt, {response.usage.completion_tokens} completion")
-    print("\n✅ Telemetry trace shipped automatically to AgentPulse dashboard!")
-
+    sentinel.flush(timeout=2.0)

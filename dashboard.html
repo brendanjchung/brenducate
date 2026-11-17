@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brenducate — Margin Control Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="index.html" class="wordmark">
+        <span class="mark" aria-hidden="true"></span>Brenducate
+      </a>
+
+      <nav class="dash-tabs hidden" id="dashNav" aria-label="Dashboard sections">
+        <button type="button" class="dash-tab active" data-pane="margins">Tenant Margins</button>
+        <button type="button" class="dash-tab" data-pane="traces">Traces</button>
+        <button type="button" class="dash-tab" data-pane="policies">Policies &amp; Degradation</button>
+        <button type="button" class="dash-tab" data-pane="sdk">SDK &amp; Alerts</button>
+      </nav>
+
+      <div class="nav-actions">
+        <span id="workspaceBadge" class="badge badge-neutral hidden">Workspace</span>
+        <button type="button" class="btn btn-sm btn-secondary hidden" id="upgradeBtn">Upgrade Plan</button>
+        <button type="button" class="btn btn-sm btn-ghost hidden" id="logoutBtn">Log out</button>
+        <a href="index.html" class="btn btn-sm btn-ghost">← Back to site</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- AUTHENTICATION GATE (shown when unauthenticated) -->
+  <section id="authGate" class="auth-wrap">
+    <div class="card">
+      <h1 class="serif-title" style="font-size: 1.875rem; margin-bottom: 0.375rem;">Control your AI margins</h1>
+      <p class="muted" style="font-size: 0.9375rem; margin-bottom: 1.25rem;">
+        Create a workspace to get your API key or sign in to monitor per-tenant LLM spend.
+      </p>
+
+      <div class="auth-switch" role="tablist" aria-label="Authentication mode">
+        <button type="button" id="modeSignupBtn" aria-selected="true">Create account</button>
+        <button type="button" id="modeLoginBtn" aria-selected="false">Sign in</button>
+      </div>
+
+      <!-- Sign up form -->
+      <form id="signupForm" class="form-stack">
+        <div class="field">
+          <label for="signupTeam">Workspace / Company Name</label>
+          <input type="text" id="signupTeam" name="organization" class="input-control" autocomplete="organization" placeholder="Acme AI Inc." required>
+        </div>
+        <div class="field">
+          <label for="signupEmail">Work Email</label>
+          <span class="hint" id="signupEmailHint">Format: founder@company.com</span>
+          <input type="email" id="signupEmail" name="email" class="input-control" autocomplete="username" spellcheck="false" aria-describedby="signupEmailHint" placeholder="founder@acme.ai" required>
+          <div class="error-msg">Please enter a valid email address.</div>
+        </div>
+        <div class="field">
+          <label for="signupPassword">Password</label>
+          <span class="hint" id="signupPassHint">At least 8 characters</span>
+          <input type="password" id="signupPassword" name="new-password" class="input-control" autocomplete="new-password" minlength="8" aria-describedby="signupPassHint" required>
+          <div class="error-msg">Password must be at least 8 characters.</div>
+        </div>
+        <div id="signupError" class="subtle-text" style="color: #b3261e;"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="signupSubmitBtn">Create workspace &amp; get API key</button>
+      </form>
+
+      <!-- Sign in form -->
+      <form id="loginForm" class="form-stack hidden">
+        <div class="field">
+          <label for="loginEmail">Work Email</label>
+          <input type="email" id="loginEmail" name="email" class="input-control" autocomplete="username" spellcheck="false" placeholder="founder@acme.ai" required>
+        </div>
+        <div class="field">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" name="current-password" class="input-control" autocomplete="current-password" required>
+        </div>
+        <div id="loginError" class="subtle-text" style="color: #b3261e;"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="loginSubmitBtn">Sign in to dashboard</button>
+      </form>
+
+      <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--line); text-align: center;">
+        <p class="subtle-text" style="margin-bottom: 0.625rem;">Want to test before creating an account?</p>
+        <button type="button" class="btn btn-secondary btn-sm btn-block" id="enterDemoSandboxBtn">
+          Open Demo Sandbox Workspace
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- AUTHENTICATED DASHBOARD -->
+  <main id="dashApp" class="container dash-main hidden">
+
+    <!-- Quickstart Bar (shows live test button + newly issued key if just created) -->
+    <section class="quickstart-banner" aria-label="Quick integration bar">
+      <div>
+        <strong style="display: block; font-size: 0.9375rem;" id="quickstartTitle">Workspace ready for telemetry</strong>
+        <span class="subtle-text" id="quickstartSub">Send a simulated multi-tenant agent run to see Smart Degradation &amp; tenant caps update in real time.</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
+        <code class="quickstart-key" id="keyDisplayChip">br_live_...</code>
+        <button type="button" class="btn btn-sm btn-secondary hidden" id="copyFullKeyBtn">Copy Key</button>
+        <button type="button" class="btn btn-sm btn-primary" id="sendTestTraceBtn">Simulate Degraded Run</button>
+        <button type="button" class="btn btn-sm btn-secondary" id="refreshDataBtn">Refresh</button>
+      </div>
+    </section>
+
+    <!-- PANE 1: TENANT MARGINS -->
+    <section id="pane-margins" class="dash-pane active">
+      <div class="kpi-grid">
+        <article class="kpi-card">
+          <div class="kpi-label"><span>Net Margin Saved (30d)</span><span class="badge badge-ok">Degrade + Loops</span></div>
+          <div class="kpi-value ok" id="kpiSaved30d">$0.00</div>
+          <div class="kpi-sub">Tracked directly vs baseline model</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label"><span>Active Burn (24h)</span><span class="badge badge-neutral" id="kpiTenantsCount">0 tenants</span></div>
+          <div class="kpi-value" id="kpiSpend24h">$0.00</div>
+          <div class="kpi-sub" id="kpiSpend30dSub">$0.00 total in last 30 days</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label"><span>Model Step-Downs (24h)</span><span class="badge badge-warn">Smart Degrade</span></div>
+          <div class="kpi-value" id="kpiDegraded24h">0</div>
+          <div class="kpi-sub">Runs moved to same-family mini/haiku</div>
+        </article>
+        <article class="kpi-card">
+          <div class="kpi-label"><span>Loop &amp; Cap Halts (24h)</span><span class="badge badge-halt">Breaker</span></div>
+          <div class="kpi-value" id="kpiKilled24h">0</div>
+          <div class="kpi-sub" id="kpiAlertsSub">0 open alerts</div>
+        </article>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Per-Tenant Unit Economics &amp; Controls</h2>
+            <p class="subtle-text">Daily and 30-day LLM spend broken down by your end-customers (`tenant_id`). Step-down or block heavy burners in one click.</p>
+          </div>
+        </div>
+
+        <div tabindex="0" role="region" aria-labelledby="tenantsTableCaption" class="table-wrapper">
+          <table class="data-table">
+            <caption id="tenantsTableCaption">Per-tenant daily and 30-day LLM spend, savings, and manual guardrail overrides</caption>
+            <thead>
+              <tr>
+                <th>Tenant ID</th>
+                <th class="r">Spent Today</th>
+                <th class="r">Saved Today</th>
+                <th class="r">30d Spend</th>
+                <th class="r">Runs</th>
+                <th class="r">Degraded</th>
+                <th class="r">Halted</th>
+                <th>Status</th>
+                <th>Manual Override</th>
+              </tr>
+            </thead>
+            <tbody id="tenantsTableBody">
+              <tr><td colspan="9" class="muted" style="text-align:center; padding: 2rem;">No tenant telemetry yet. Click "Simulate Degraded Run" above or run your SDK.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANE 2: TRACES -->
+    <section id="pane-traces" class="dash-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Execution Trace Ledger</h2>
+            <p class="subtle-text">Exact input, prompt-cache hits, reasoning tokens, and model step-down deltas per call.</p>
+          </div>
+          <div class="input-row">
+            <input type="text" id="traceTenantFilter" class="input-control" style="height: 2.125rem; width: 12rem; font-size: 0.875rem;" placeholder="Filter tenant_id...">
+            <select id="traceStatusFilter" class="input-control" style="height: 2.125rem; width: 10.5rem; font-size: 0.875rem;" aria-label="Filter traces by status">
+              <option value="">All statuses</option>
+              <option value="DEGRADED">DEGRADED</option>
+              <option value="CIRCUIT_KILLED">CIRCUIT_KILLED</option>
+              <option value="BUDGET_BLOCKED">BUDGET_BLOCKED</option>
+              <option value="COMPLETED">COMPLETED</option>
+            </select>
+          </div>
+        </div>
+
+        <div tabindex="0" role="region" aria-labelledby="tracesTableCaption" class="table-wrapper">
+          <table class="data-table">
+            <caption id="tracesTableCaption">Recent LLM runs and step-level cost telemetry</caption>
+            <thead>
+              <tr>
+                <th>Trace</th>
+                <th>Tenant</th>
+                <th>Agent</th>
+                <th>Model Path</th>
+                <th>Status</th>
+                <th class="r">Tokens (Cached)</th>
+                <th class="r">Cost</th>
+                <th class="r">Saved</th>
+              </tr>
+            </thead>
+            <tbody id="tracesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANE 3: POLICIES & DEGRADATION -->
+    <section id="pane-policies" class="dash-pane">
+      <div class="split-2">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2 class="card-title">Global Guardrail &amp; Degradation Policy</h2>
+              <p class="subtle-text">Synced every 60s to your Python SDKs and enforced in-process in &lt;1ms.</p>
+            </div>
+          </div>
+
+          <form id="policyForm" class="form-stack">
+            <div class="form-grid">
+              <div class="field">
+                <label for="polRunDegrade">Per-Run Soft Cap (Step Down USD)</label>
+                <span class="hint">Step down Sonnet → Haiku or 4o → 4o-mini</span>
+                <input type="number" step="0.01" min="0" id="polRunDegrade" class="input-control" required>
+              </div>
+              <div class="field">
+                <label for="polRunMax">Per-Run Hard Cap (Kill USD)</label>
+                <span class="hint">Raise CircuitBreakerException cleanly</span>
+                <input type="number" step="0.01" min="0.01" id="polRunMax" class="input-control" required>
+              </div>
+              <div class="field">
+                <label for="polTenantDegrade">Per-Tenant Daily Soft Cap (USD)</label>
+                <span class="hint">Auto-degrade heavy tenant for today</span>
+                <input type="number" step="0.1" min="0" id="polTenantDegrade" class="input-control" required>
+              </div>
+              <div class="field">
+                <label for="polTenantCap">Per-Tenant Daily Hard Cap (USD)</label>
+                <span class="hint">Block tenant before tokens are burned</span>
+                <input type="number" step="0.1" min="0.01" id="polTenantCap" class="input-control" required>
+              </div>
+              <div class="field">
+                <label for="polMaxHops">Max Tool / LLM Hops per Run</label>
+                <input type="number" min="1" max="200" id="polMaxHops" class="input-control" required>
+              </div>
+              <div class="field">
+                <label for="polDupCalls">Repeated Loop Tolerance</label>
+                <input type="number" min="1" max="20" id="polDupCalls" class="input-control" required>
+              </div>
+            </div>
+
+            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; cursor: pointer;">
+              <input type="checkbox" id="polKillLoop" checked>
+              Kill infinite repetitive tool loops immediately in &lt;1ms
+            </label>
+
+            <div>
+              <button type="submit" class="btn btn-primary" id="savePolicyBtn">Save Policy &amp; Sync SDKs</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">Same-Family Step-Down Rules</h2>
+          </div>
+          <p class="subtle-text" style="margin-bottom: 1rem;">
+            Same-family step-downs keep your API client, tool schemas, and prompt cache annotations valid without changing providers. Sticky per run so fallback turns hit the new cache.
+          </p>
+          <div id="fallbackMapList" style="display: flex; flex-direction: column; gap: 0.5rem;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PANE 4: SDK, KEYS & ALERTS -->
+    <section id="pane-sdk" class="dash-pane">
+      <div class="split-2">
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">1-Line SDK Setup (OpenAI &amp; Anthropic)</h2>
+            <button type="button" class="btn btn-xs btn-secondary" id="copySdkSnippetBtn">Copy Snippet</button>
+          </div>
+          <pre class="code-box" id="sdkSnippetPre"></pre>
+
+          <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid var(--line);">
+            <h3 class="card-title" style="margin-bottom: 0.5rem;">Workspace API Key</h3>
+            <p class="subtle-text" style="margin-bottom: 0.75rem;">Active prefix: <code class="mono" id="sdkKeyPrefix">br_live_...</code></p>
+            <button type="button" class="btn btn-sm btn-secondary" id="rotateKeyBtn">Rotate API Key</button>
+            <div id="rotatedKeyBox" class="hidden" style="margin-top: 0.75rem;">
+              <p class="subtle-text" style="color: var(--ok); font-weight: 500;">New API key issued (copy now — shown once):</p>
+              <code class="quickstart-key" id="rotatedKeyVal" style="display: inline-block; margin-top: 0.375rem;"></code>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Slack / Webhook Margin Alerts</h2>
+            </div>
+            <form id="webhookForm" class="form-stack">
+              <div class="field">
+                <label for="slackWebhookInput">Slack Incoming Webhook URL</label>
+                <span class="hint">Receives instant notifications when a tenant triggers Smart Degradation or hits a hard cap.</span>
+                <input type="url" id="slackWebhookInput" class="input-control" placeholder="https://hooks.slack.com/services/...">
+              </div>
+              <div class="input-row">
+                <button type="submit" class="btn btn-sm btn-primary">Save Webhook</button>
+                <button type="button" class="btn btn-sm btn-secondary" id="testWebhookBtn">Send Test Alert</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h2 class="card-title">Active Guardrail Alerts</h2>
+            </div>
+            <div id="alertsList">
+              <p class="subtle-text">No open alerts.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- TRACE DETAIL DIALOG (modern-web-guidance: light-dismiss-a-dialog) -->
+  <dialog id="traceDialog" closedby="any" aria-labelledby="traceDialogTitle">
+    <div class="dialog-head">
+      <div>
+        <h2 id="traceDialogTitle" style="font-size: 1.0625rem; font-weight: 600;">Execution Trace</h2>
+        <span id="traceDialogMeta" class="subtle-text mono"></span>
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost" id="closeTraceDialogBtn" aria-label="Close trace modal">✕</button>
+    </div>
+    <div class="dialog-body" id="traceDialogBody"></div>
+  </dialog>
+
+  <!-- UPGRADE / STRIPE CHECKOUT DIALOG -->
+  <dialog id="upgradeDialog" closedby="any" aria-labelledby="upgradeDialogTitle">
+    <div class="dialog-head">
+      <h2 id="upgradeDialogTitle" style="font-size: 1.0625rem; font-weight: 600;">Upgrade Workspace Plan</h2>
+      <button type="button" class="btn btn-sm btn-ghost" id="closeUpgradeDialogBtn" aria-label="Close upgrade modal">✕</button>
+    </div>
+    <div class="dialog-body">
+      <p class="muted" style="margin-bottom: 1rem;">Start a 14-day free trial via Stripe Checkout. Cancel anytime.</p>
+      <div class="form-grid" style="margin-bottom: 1rem;">
+        <div class="card" style="box-shadow: none;">
+          <strong>Pro Margin Guard</strong>
+          <div style="font-family: var(--serif); font-size: 2rem; margin: 0.375rem 0;">$99 <span class="subtle-text">/mo</span></div>
+          <p class="subtle-text" style="margin-bottom: 1rem;">Up to 250,000 LLM calls/mo + Slack webhooks &amp; 30d history.</p>
+          <button type="button" class="btn btn-primary btn-block checkout-plan-btn" data-plan="pro">Select Pro ($99/mo)</button>
+        </div>
+        <div class="card" style="box-shadow: none;">
+          <strong>Scale Fleet</strong>
+          <div style="font-family: var(--serif); font-size: 2rem; margin: 0.375rem 0;">$299 <span class="subtle-text">/mo</span></div>
+          <p class="subtle-text" style="margin-bottom: 1rem;">Up to 2,000,000 calls/mo + custom degradation maps.</p>
+          <button type="button" class="btn btn-secondary btn-block checkout-plan-btn" data-plan="scale">Select Scale ($299/mo)</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

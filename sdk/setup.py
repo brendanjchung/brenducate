@@ -9,18 +9,17 @@ if os.path.exists(readme_path):
 
 setup(
     name="brenducate-sdk",
-    version="0.1.0",
-    description="Production LLM agent observability, circuit-breaker guardrails, and prompt drift sentinel.",
+    version="0.2.0",
+    description="Per-tenant margin guardrails, same-family Smart Degradation, and sub-millisecond loop interception for OpenAI and Anthropic.",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Brenducate",
     author_email="founder@brenducate.com",
     url="https://brenducate.com",
-    packages=find_packages(),
+    packages=find_packages(include=["brenducate*"]),
     python_requires=">=3.9",
     install_requires=[
         "httpx>=0.27.0",
-        "python-dotenv>=1.0.0",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

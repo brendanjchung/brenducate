@@ -1,81 +1,76 @@
-# AgentPulse Python SDK (`agentpulse-sdk`)
+# Brenducate Python SDK (`brenducate-sdk`)
 
-Production observability, prompt drift sentinel, and sub-millisecond circuit breakers for autonomous LLM agents (LangChain, AutoGen, CrewAI, LlamaIndex, or raw OpenAI/Anthropic).
+Lightweight, open-source **Per-Tenant Margin Guardrails**, **Same-Family Smart Degradation**, and **Sub-Millisecond Loop Interception** for **OpenAI** and **Anthropic** (`OpenAI`, `AsyncOpenAI`, `Anthropic`, `AsyncAnthropic`).
 
-## 🚀 Quickstart
+- **Zero critical-path network latency (`<1ms`):** All run caps, loop detection, and tenant spend checks run in-process against locally cached policy state.
+- **Same-Family Smart Degradation:** When a run or end-customer crosses your soft budget threshold, calls automatically step down within the same provider family (`claude-sonnet-4` → `claude-3-5-haiku-latest`, `gpt-4o` → `gpt-4o-mini`) and stay sticky per run to preserve prompt cache hits.
+- **Exact Streaming & Prompt Cache Math:** Automatically injects `stream_options={"include_usage": True}` on OpenAI streams and tracks cached reads, cache writes, and reasoning tokens accurately.
+- **Serverless Safe & Fail-Open:** Background queue flushes cleanly via `flush()` / `await aflush()` and `atexit` hooks for AWS Lambda & Modal. SDK internal errors never block LLM calls.
 
-### 1. Install
+## Install
+
 ```bash
-pip install agentpulse-sdk
-# or install locally from source:
+pip install brenducate-sdk
+# or from source:
 pip install -e sdk/
 ```
 
-### 2. Wrap your Agent Function
+## Quickstart: Per-Tenant Guardrails (OpenAI & Anthropic)
 
 ```python
-from agentpulse import AgentPulse, CircuitBreaker
+from openai import OpenAI
+from brenducate import Brenducate, CircuitBreaker, wrap_openai
 
-# Initialize sentinel
-pulse = AgentPulse(
-    api_key="ap_live_your_api_key_here",
-    base_url="http://localhost:8000",   # Use https://api.agentpulse.io in production
-    environment="production"
-)
+sentinel = Brenducate(api_key="br_live_...")
 
-# Protect your agent with a circuit breaker
-@pulse.monitor(
-    agent_id="customer-support-copilot",
-    model="claude-3-7-sonnet",
+client = wrap_openai(
+    OpenAI(),
+    pulse=sentinel,
+    agent_id="support-copilot",
     circuit_breaker=CircuitBreaker(
-        max_hops=6,                     # Abort if agent loops > 6 hops
-        max_cost_usd=0.50,              # Kill if run exceeds $0.50
-        kill_on_infinite_loop=True,     # Kill repetitive duplicate tool calls
-        max_duplicate_calls=2
-    )
+        degrade_after_cost_usd=0.25,  # Step down gpt-4o -> gpt-4o-mini after $0.25/run
+        max_cost_usd=1.50,            # Hard kill run at $1.50
+        max_hops=12,
+    ),
 )
-def run_my_agent(user_query: str):
-    # Record reasoning steps or tool calls inside your loop
-    pulse.record_step(
-        step_type="tool",
-        title="CRM Search",
-        content="Searching customer ticket history",
-        tool_call_str='crm.search(query="invoice 9812")',
-        input_tokens=1500,
-        output_tokens=300
+
+with sentinel.tenant("acme_corp"):
+    resp = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": "Analyze Q3 support tickets"}],
+        stream=True,  # stream_options={"include_usage": True} injected automatically
     )
-    
-    # If the agent attempts a runaway recursive loop, CircuitBreakerException
-    # is raised in <1ms, killing the run and logging the incident to your dashboard!
-    return "Resolved query."
+    for chunk in resp:
+        pass
 ```
 
-### 3. Context Manager Syntax
-
-You can also use AgentPulse as an explicit context manager:
+Works identically with `AsyncOpenAI`, `Anthropic`, and `AsyncAnthropic` (including `.messages.create` and `.messages.stream`):
 
 ```python
-with pulse.trace("sql-analyst", model="gpt-4o") as t:
-    t.record_step(
-        step_type="tool",
-        title="Execute SQL",
-        tool_call_str="SELECT * FROM users",
-        input_tokens=800,
-        output_tokens=200
-    )
+from anthropic import AsyncAnthropic
+from brenducate import wrap_anthropic
+
+anthropic_client = wrap_anthropic(AsyncAnthropic(), pulse=sentinel)
+
+async with sentinel.tenant("acme_corp"):
+    async with anthropic_client.messages.stream(
+        model="claude-sonnet-4-20250514",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": "Draft onboarding plan"}],
+    ) as stream:
+        async for text in stream.text_stream:
+            pass
 ```
 
-## 🛡️ Circuit Breakers & Guardrails
+## Serverless Environments (AWS Lambda / Modal)
 
-| Guardrail | Parameter | Default | Behavior |
-| :--- | :--- | :--- | :--- |
-| **Max Hops** | `max_hops` | `8` | Aborts run if total reasoning steps / tool calls exceeds limit. |
-| **Cost Ceiling** | `max_cost_usd` | `$1.00` | Calculates token spend against live model pricing; aborts if exceeded. |
-| **Infinite Recursion** | `kill_on_infinite_loop` | `True` | Intercepts repetitive duplicate queries with zero parameter change. |
-| **Duplicate Threshold** | `max_duplicate_calls` | `2` | Number of allowable consecutive duplicate calls before termination. |
+Call `sentinel.flush()` before returning your handler response so queued telemetry always flushes before container freeze:
 
-## 📦 Features
-- **Zero latency impact**: Telemetry payloads are delivered asynchronously using non-blocking HTTP workers.
-- **In-process guardrail checks**: All circuit-breaker decisions execute in memory in `<1ms` without waiting for network responses.
-- **Auto cost calculation**: Built-in pricing matrix for Claude 3.7/3.5, GPT-4o, Gemini 2.5, DeepSeek R1, and Llama 3.3.
-- **Framework agnostic**: Works natively with LangChain, AutoGen, CrewAI, LiteLLM, or plain Python functions.
+```python
+def lambda_handler(event, context):
+    try:
+        with sentinel.tenant(event["tenant_id"]):
+            return run_agent(event["prompt"])
+    finally:
+        sentinel.flush(timeout=2.0)
+```

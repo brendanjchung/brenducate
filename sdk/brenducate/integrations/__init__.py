@@ -1,13 +1,11 @@
 """
-AgentPulse SDK — Framework Integrations
-Auto-instrumentation for OpenAI, LangChain, LangGraph, and CrewAI.
+Brenducate SDK — Provider Client Integrations (OpenAI & Anthropic Sync/Async)
 """
 
+from .anthropic import wrap_anthropic
 from .openai import wrap_openai
-from .langchain import AgentPulseCallbackHandler
 
 __all__ = [
     "wrap_openai",
-    "AgentPulseCallbackHandler",
+    "wrap_anthropic",
 ]
-
