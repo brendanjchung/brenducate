@@ -15,11 +15,23 @@ from typing import Any, Dict, Optional, Tuple
 # USD per 1,000,000 tokens
 MODEL_PRICING: Dict[str, Dict[str, float]] = {
     # Anthropic Claude models
+    "claude-opus-4-5": {
+        "input": 15.00,
+        "cached_input": 1.50,
+        "cache_write": 18.75,
+        "output": 75.00,
+    },
     "claude-opus-4": {
         "input": 15.00,
         "cached_input": 1.50,
         "cache_write": 18.75,
         "output": 75.00,
+    },
+    "claude-sonnet-4-5": {
+        "input": 3.00,
+        "cached_input": 0.30,
+        "cache_write": 3.75,
+        "output": 15.00,
     },
     "claude-sonnet-4": {
         "input": 3.00,
@@ -39,6 +51,12 @@ MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "cache_write": 3.75,
         "output": 15.00,
     },
+    "claude-haiku-4-5": {
+        "input": 1.00,
+        "cached_input": 0.10,
+        "cache_write": 1.25,
+        "output": 5.00,
+    },
     "claude-3-5-haiku": {
         "input": 0.80,
         "cached_input": 0.08,
@@ -52,6 +70,30 @@ MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "output": 1.25,
     },
     # OpenAI models
+    "gpt-5-nano": {
+        "input": 0.05,
+        "cached_input": 0.005,
+        "cache_write": 0.05,
+        "output": 0.40,
+    },
+    "gpt-5-mini": {
+        "input": 0.25,
+        "cached_input": 0.025,
+        "cache_write": 0.25,
+        "output": 2.00,
+    },
+    "gpt-5.4": {
+        "input": 2.50,
+        "cached_input": 0.25,
+        "cache_write": 2.50,
+        "output": 15.00,
+    },
+    "gpt-5": {
+        "input": 1.25,
+        "cached_input": 0.125,
+        "cache_write": 1.25,
+        "output": 10.00,
+    },
     "gpt-4.1": {
         "input": 2.00,
         "cached_input": 0.50,
@@ -123,12 +165,19 @@ _PRICING_KEYS_SORTED = sorted(
 
 # Default same-family Smart Degradation mapping (already-cheap models map to None)
 DEFAULT_DEGRADATION_MAP: Dict[str, Optional[str]] = {
+    "claude-opus-4-5": "claude-sonnet-4-5-20250929",
     "claude-opus-4": "claude-sonnet-4-20250514",
+    "claude-sonnet-4-5": "claude-haiku-4-5-20251001",
     "claude-sonnet-4": "claude-3-5-haiku-latest",
     "claude-3-7-sonnet": "claude-3-5-haiku-latest",
     "claude-3-5-sonnet": "claude-3-5-haiku-latest",
+    "claude-haiku-4-5": None,
     "claude-3-5-haiku": None,
     "claude-3-haiku": None,
+    "gpt-5.4": "gpt-5-mini",
+    "gpt-5": "gpt-5-mini",
+    "gpt-5-mini": "gpt-5-nano",
+    "gpt-5-nano": None,
     "gpt-4.1": "gpt-4.1-mini",
     "gpt-4.1-mini": None,
     "gpt-4.1-nano": None,
@@ -210,19 +259,32 @@ def resolve_step_down_model(
 
 def extract_openai_usage(usage_obj: Any) -> TokenUsage:
     """
-    Extract normalized TokenUsage from an OpenAI response or stream chunk `.usage`.
-    Note: OpenAI `prompt_tokens` already includes `cached_tokens`.
+    Extract normalized TokenUsage from an OpenAI Chat Completions OR Responses API `.usage`.
+    Note: OpenAI `prompt_tokens` / `input_tokens` already includes `cached_tokens`.
     """
     if not usage_obj:
         return TokenUsage()
 
-    total_prompt = int(_get_attr_or_key(usage_obj, "prompt_tokens", 0) or 0)
-    total_completion = int(_get_attr_or_key(usage_obj, "completion_tokens", 0) or 0)
+    prompt_val = _get_attr_or_key(usage_obj, "prompt_tokens")
+    if prompt_val is None:
+        prompt_val = _get_attr_or_key(usage_obj, "input_tokens", 0)
+    total_prompt = int(prompt_val or 0)
 
-    prompt_details = _get_attr_or_key(usage_obj, "prompt_tokens_details")
+    comp_val = _get_attr_or_key(usage_obj, "completion_tokens")
+    if comp_val is None:
+        comp_val = _get_attr_or_key(usage_obj, "output_tokens", 0)
+    total_completion = int(comp_val or 0)
+
+    prompt_details = (
+        _get_attr_or_key(usage_obj, "prompt_tokens_details")
+        or _get_attr_or_key(usage_obj, "input_tokens_details")
+    )
     cached = int(_get_attr_or_key(prompt_details, "cached_tokens", 0) or 0)
 
-    comp_details = _get_attr_or_key(usage_obj, "completion_tokens_details")
+    comp_details = (
+        _get_attr_or_key(usage_obj, "completion_tokens_details")
+        or _get_attr_or_key(usage_obj, "output_tokens_details")
+    )
     reasoning = int(_get_attr_or_key(comp_details, "reasoning_tokens", 0) or 0)
 
     uncached_input = max(0, total_prompt - cached)

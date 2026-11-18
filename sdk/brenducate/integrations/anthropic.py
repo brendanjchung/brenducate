@@ -70,7 +70,9 @@ def _prepare_anthropic_call(
     requested_model = call_kwargs.get("model", "claude-sonnet-4-20250514")
     prompt_str = _extract_anthropic_prompt(call_kwargs)
     ctx = Brenducate.get_current_context()
-    effective_breaker = ctx.breaker if ctx else breaker
+    effective_breaker = pulse._client.policy_store.resolve_breaker(ctx.breaker if ctx else breaker)
+    if ctx:
+        ctx.breaker = effective_breaker
 
     action, policy_model, reason = pulse._client.policy_store.check_tenant(
         tenant_id=tenant_id,
@@ -165,6 +167,14 @@ def _record_anthropic_result(
 
     pulse._client.policy_store.record_local_spend(tenant_id, cost)
 
+    safe_prompt = pulse.redact_text(prompt_str)[:500] or "(no prompt captured)"
+    safe_content = pulse.redact_text(content_preview, placeholder="[redacted]")[:300]
+    step_detail = (
+        "[redacted: metadata-only mode]"
+        if not pulse.capture_prompts
+        else f"Prompt: {safe_prompt[:120]}\nResponse: {safe_content[:120]}"
+    )
+
     if ctx:
         if not ctx.state.original_model:
             ctx.state.original_model = requested_model
@@ -184,7 +194,7 @@ def _record_anthropic_result(
             tool_call_str=f"messages.create(model='{executed_model}')",
             step_type="degrade" if was_degraded else "tool",
             title=f"Anthropic ({executed_model})" + (" [Degraded]" if was_degraded else ""),
-            content=f"Prompt: {prompt_str[:120]}\nResponse: {content_preview[:120]}",
+            content=step_detail,
             tenant_id=tenant_id,
         )
         ctx.state.maybe_activate_degradation(requested_model, ctx.breaker)
@@ -201,11 +211,11 @@ def _record_anthropic_result(
             executed_model=executed_model,
             was_degraded=was_degraded,
         )
-        state.add_step(step_type="thought", title="User Prompt", content=prompt_str)
+        state.add_step(step_type="thought", title="User Prompt", content=safe_prompt)
         state.add_step(
             step_type="degrade" if was_degraded else "final",
             title=f"Anthropic Response ({executed_model})" + (" [Degraded]" if was_degraded else ""),
-            content=content_preview,
+            content=safe_content,
         )
         status = "DEGRADED" if was_degraded else "COMPLETED"
         payload = {
@@ -214,7 +224,7 @@ def _record_anthropic_result(
             "original_model": requested_model,
             "executed_model": executed_model,
             "was_degraded": was_degraded,
-            "prompt": prompt_str[:500] or "(no prompt captured)",
+            "prompt": safe_prompt,
             "status": status,
             "input_tokens": state.input_tokens,
             "cached_input_tokens": state.cached_input_tokens,
@@ -481,7 +491,7 @@ def wrap_anthropic(
     if pulse is None:
         pulse = Brenducate(
             api_key=os.getenv("BRENDUCATE_API_KEY", "br_live_demo_key_00001"),
-            base_url=os.getenv("BRENDUCATE_BASE_URL", "https://brenducate.com"),
+            base_url=os.getenv("BRENDUCATE_BASE_URL", "https://www.brenducate.com"),
         )
 
     breaker = circuit_breaker or CircuitBreaker()

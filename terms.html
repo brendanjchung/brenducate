@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — Brenducate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .legal-main { max-width: 46rem; margin-inline: auto; padding: 4rem var(--gutter) 5rem; }
+    .legal-main h1 { font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); margin-bottom: 0.75rem; }
+    .legal-main .lead { color: var(--ink-2); font-size: 1.0625rem; margin-bottom: 2.5rem; }
+    .legal-main article { display: flex; flex-direction: column; gap: 1.5rem; line-height: 1.65; color: var(--ink-2); }
+    .legal-main section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
+    .legal-main h2 { font-family: var(--serif); font-size: 1.375rem; font-weight: 400; color: var(--ink); margin-bottom: 0.625rem; }
+    .legal-main ul { margin-left: 1.25rem; margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.375rem; }
+    .legal-footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--ink-3); font-size: 0.8125rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="index.html" class="wordmark"><span class="mark" aria-hidden="true"></span>Brenducate</a>
+      <div class="nav-actions">
+        <a href="dashboard.html" class="btn btn-sm btn-ghost">Dashboard</a>
+        <a href="index.html" class="btn btn-sm btn-secondary">← Back to home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="legal-main">
+    <h1 class="serif-title">Terms of Service</h1>
+    <p class="lead">Effective November 17, 2026 · Straightforward terms for using the open-source SDK and hosted margin ledger.</p>
+
+    <article>
+      <section>
+        <h2>1. Open-Source SDK &amp; Hosted Control Plane</h2>
+        <p>The <code>brenducate-sdk</code> Python client library is licensed under the MIT License and may be inspected and modified freely. Use of the hosted dashboard, policy sync API, and PostgreSQL ledger at brenducate.com is governed by these terms.</p>
+      </section>
+
+      <section>
+        <h2>2. Fail-Open Architecture &amp; Spend Liability</h2>
+        <p>Brenducate enforces spend caps and model degradation locally on a best-effort, fail-open basis so network interruptions do not halt your production applications. You remain responsible for charges incurred on your OpenAI, Anthropic, or other model provider accounts.</p>
+      </section>
+
+      <section>
+        <h2>3. Subscriptions &amp; Cancellation</h2>
+        <ul>
+          <li>Paid plans (Pro Margin Guard and Scale Fleet) bill monthly via Stripe following any active trial window.</li>
+          <li>You may cancel at any time before your next billing date with zero lock-in fees by emailing <a href="mailto:brendan@brenducate.com" style="text-decoration:underline; color:var(--ink);">brendan@brenducate.com</a>.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Limitation of Liability</h2>
+        <p>The hosted service is provided on an "as-is" basis without warranty of uninterrupted uptime. To the maximum extent permitted by law, Brenducate's aggregate liability shall not exceed fees paid by you in the preceding three months.</p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="container legal-footer">
+    <span>© 2026 Brenducate</span>
+    <span><a href="privacy.html">Privacy Policy</a> · <a href="index.html">Home</a></span>
+  </footer>
+</body>
+</html>

@@ -26,6 +26,7 @@ import json
 import os
 import uuid
 import secrets
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
@@ -137,6 +138,24 @@ app.add_middleware(
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _require_non_demo(acc: Account, action: str) -> None:
+    """Prevent shared demo visitors from mutating shared sandbox config/webhooks."""
+    if acc.id == "acc_demo_sandbox":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Create a free workspace to {action} (disabled on shared demo sandbox).",
+        )
+
+
+def _append_query_params(url: str, params: Dict[str, str]) -> str:
+    parsed = urlparse(url)
+    existing = dict(parse_qsl(parsed.query))
+    for k, v in params.items():
+        if v:
+            existing[k] = v
+    return urlunparse(parsed._replace(query=urlencode(existing)))
+
 
 def _today_utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -312,6 +331,7 @@ def update_webhook(
     acc: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
 ):
+    _require_non_demo(acc, "configure a Slack webhook")
     url = (body.slack_webhook_url or "").strip() or None
     if url and not url.startswith(("https://", "http://")):
         raise HTTPException(status_code=400, detail="Webhook URL must start with https:// or http://")
@@ -359,6 +379,7 @@ def update_policies(
     acc: Account = Depends(get_current_account),
     db: Session = Depends(get_db),
 ):
+    _require_non_demo(acc, "save custom guardrail policies")
     policy = _get_or_create_policy(db, acc.id)
     policy.degrade_after_run_cost_usd = body.degrade_after_run_cost_usd
     policy.max_run_cost_usd = body.max_run_cost_usd
@@ -764,6 +785,7 @@ def resolve_alert(
 def test_webhook(
     acc: Account = Depends(get_current_account),
 ):
+    _require_non_demo(acc, "send test webhook alerts")
     if not acc.slack_webhook_url:
         raise HTTPException(status_code=400, detail="No Slack/webhook URL configured for this workspace.")
     ok = _dispatch_slack_webhook(
@@ -837,8 +859,17 @@ def create_checkout_session(body: CreateCheckoutSessionRequest, db: Session = De
 
     payment_link = STRIPE_PAYMENT_LINK_PRO if plan_key == "pro" else STRIPE_PAYMENT_LINK_SCALE
     if payment_link and not STRIPE_SECRET_KEY:
+        email_norm = body.email.strip().lower()
+        acc = db.query(Account).filter(Account.email == email_norm).first()
+        enriched_link = _append_query_params(
+            payment_link,
+            {
+                "prefilled_email": email_norm,
+                "client_reference_id": acc.id if acc else "",
+            },
+        )
         return CheckoutSessionResponse(
-            checkout_url=payment_link,
+            checkout_url=enriched_link,
             session_id="pl_direct_" + secrets.token_hex(6),
             plan=plan_key,
         )
@@ -883,10 +914,27 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     event_type = event.get("type")
     if event_type == "checkout.session.completed":
         session = event.get("data", {}).get("object", {})
-        metadata = session.get("metadata", {})
-        email_norm = (session.get("customer_email") or metadata.get("email") or "").strip().lower()
-        plan = metadata.get("plan") or "pro"
-        acc = db.query(Account).filter(Account.email == email_norm).first()
+        metadata = session.get("metadata") or {}
+        customer_details = session.get("customer_details") or {}
+        email_norm = (
+            session.get("customer_email")
+            or customer_details.get("email")
+            or metadata.get("email")
+            or ""
+        ).strip().lower()
+        ref_id = (session.get("client_reference_id") or "").strip()
+        amount_total = int(session.get("amount_total") or 0)
+        plan = (
+            metadata.get("plan")
+            or ("scale" if amount_total >= 20000 else "pro")
+        )
+        acc = (
+            db.query(Account).filter(Account.id == ref_id).first()
+            if ref_id
+            else None
+        )
+        if not acc and email_norm:
+            acc = db.query(Account).filter(Account.email == email_norm).first()
         if acc:
             acc.plan = plan
             acc.stripe_customer_id = session.get("customer")

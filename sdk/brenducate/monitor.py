@@ -162,6 +162,7 @@ class Brenducate:
         verbose: bool = False,
         enable_background_sync: bool = True,
         register_atexit: bool = True,
+        capture_prompts: Optional[bool] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("BRENDUCATE_API_KEY", "br_live_demo_key_00001")
         self.base_url = (
@@ -170,12 +171,23 @@ class Brenducate:
         ).rstrip("/")
         self.environment = environment
         self.verbose = verbose
+        if capture_prompts is None:
+            env_cap = os.getenv("BRENDUCATE_CAPTURE_PROMPTS", "true").strip().lower()
+            self.capture_prompts = env_cap not in ("0", "false", "no", "off")
+        else:
+            self.capture_prompts = bool(capture_prompts)
         self._client = BrenducateClient(
             api_key=self.api_key,
             base_url=self.base_url,
             enable_background_sync=enable_background_sync,
             register_atexit=register_atexit,
         )
+
+    def redact_text(self, text: Optional[str], placeholder: str = "[redacted: metadata-only mode]") -> str:
+        """Strip prompt/response bodies when metadata-only privacy mode is active."""
+        if self.capture_prompts:
+            return text or ""
+        return placeholder
 
     @classmethod
     def get_current_context(cls) -> Optional[TraceContext]:
@@ -202,12 +214,13 @@ class Brenducate:
     ) -> _TraceContextManager:
         """Sync & async context manager wrapping a multi-step agent execution."""
         effective_tenant = tenant_id or _current_tenant_id.get() or "default"
+        resolved_breaker = self._client.policy_store.resolve_breaker(circuit_breaker)
         return _TraceContextManager(
             pulse=self,
             agent_id=agent_id,
             model=model,
             tenant_id=effective_tenant,
-            breaker=circuit_breaker or CircuitBreaker(),
+            breaker=resolved_breaker,
         )
 
     def flush(self, timeout: float = 2.0) -> int:
@@ -343,12 +356,13 @@ class Brenducate:
         effective_tenant = (
             kwargs.get("tenant_id") or tenant_id or _current_tenant_id.get() or "default"
         )
+        resolved_breaker = self._client.policy_store.resolve_breaker(breaker)
         state = ExecutionState(original_model=model, executed_model=model)
         ctx = TraceContext(
             agent_id=agent_id,
             tenant_id=effective_tenant,
             model=model,
-            breaker=breaker,
+            breaker=resolved_breaker,
             state=state,
             pulse=self,
         )
@@ -417,12 +431,13 @@ class Brenducate:
         effective_tenant = (
             kwargs.get("tenant_id") or tenant_id or _current_tenant_id.get() or "default"
         )
+        resolved_breaker = self._client.policy_store.resolve_breaker(breaker)
         state = ExecutionState(original_model=model, executed_model=model)
         ctx = TraceContext(
             agent_id=agent_id,
             tenant_id=effective_tenant,
             model=model,
-            breaker=breaker,
+            breaker=resolved_breaker,
             state=state,
             pulse=self,
         )
@@ -525,13 +540,28 @@ class Brenducate:
         circuit_tripped: bool,
     ) -> None:
         self._client.policy_store.record_local_spend(tenant_id, state.cost_usd)
+        shipped_prompt = self.redact_text(prompt)[:500]
+        shipped_steps = (
+            state.steps
+            if self.capture_prompts
+            else [
+                {
+                    "step_index": s.get("step_index", i + 1),
+                    "step_type": s.get("step_type", "tool"),
+                    "title": s.get("title", "Step"),
+                    "content": "[redacted: metadata-only mode]",
+                    "tool_call": None,
+                }
+                for i, s in enumerate(state.steps)
+            ]
+        )
         payload = {
             "tenant_id": tenant_id,
             "agent_id": agent_id,
             "original_model": original_model,
             "executed_model": executed_model,
             "was_degraded": was_degraded,
-            "prompt": prompt[:500],
+            "prompt": shipped_prompt,
             "status": status,
             "input_tokens": state.input_tokens,
             "cached_input_tokens": state.cached_input_tokens,
@@ -544,7 +574,7 @@ class Brenducate:
             "hops": state.hops,
             "circuit_tripped": circuit_tripped,
             "guardrail_reason": guardrail_reason,
-            "steps": state.steps,
+            "steps": shipped_steps,
             "environment": self.environment,
         }
 

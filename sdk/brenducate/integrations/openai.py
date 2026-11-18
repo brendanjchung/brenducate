@@ -56,8 +56,26 @@ def _extract_prompt_preview(args: tuple, kwargs: Dict[str, Any]) -> str:
             ]
             return " ".join(x for x in parts if x)[:500]
         return str(content or "")[:500]
+    resp_input = kwargs.get("input")
+    if isinstance(resp_input, str):
+        return resp_input[:500]
+    if isinstance(resp_input, (list, tuple)) and resp_input:
+        last_item = resp_input[-1]
+        if isinstance(last_item, dict):
+            return str(last_item.get("content", last_item))[:500]
+        return str(getattr(last_item, "content", last_item))[:500]
     if args:
         return str(args[0])[:500]
+    return ""
+
+
+def _extract_response_preview(response: Any) -> str:
+    if hasattr(response, "choices") and response.choices:
+        msg = getattr(response.choices[0], "message", None)
+        return (getattr(msg, "content", None) or "") if msg else ""
+    out_txt = getattr(response, "output_text", None)
+    if isinstance(out_txt, str):
+        return out_txt[:300]
     return ""
 
 
@@ -71,6 +89,7 @@ def _prepare_openai_call(
     default_tenant: Optional[str],
     args: tuple,
     kwargs: Dict[str, Any],
+    inject_stream_usage: bool = True,
 ) -> Tuple[Dict[str, Any], str, str, str, bool, Optional[str], Any]:
     """
     Evaluate pre-call guardrails and Smart Degradation in <1ms.
@@ -81,7 +100,9 @@ def _prepare_openai_call(
     requested_model = call_kwargs.get("model", "gpt-4o")
     prompt_str = _extract_prompt_preview(args, call_kwargs)
     ctx = Brenducate.get_current_context()
-    effective_breaker = ctx.breaker if ctx else breaker
+    effective_breaker = pulse._client.policy_store.resolve_breaker(ctx.breaker if ctx else breaker)
+    if ctx:
+        ctx.breaker = effective_breaker
 
     # 1. Check synced tenant cap / block status
     action, policy_model, reason = pulse._client.policy_store.check_tenant(
@@ -145,8 +166,8 @@ def _prepare_openai_call(
     if was_degraded:
         call_kwargs["model"] = executed_model
 
-    # 4. Auto-inject stream_options={"include_usage": True} for streaming requests
-    if call_kwargs.get("stream"):
+    # 4. Auto-inject stream_options={"include_usage": True} for chat.completions streams
+    if inject_stream_usage and call_kwargs.get("stream"):
         stream_opts = dict(call_kwargs.get("stream_options") or {})
         stream_opts["include_usage"] = True
         call_kwargs["stream_options"] = stream_opts
@@ -166,6 +187,7 @@ def _record_openai_result(
     usage_obj: Any,
     latency_ms: int,
     ctx: Any,
+    api_label: str = "chat.completions.create",
 ) -> None:
     usage = extract_openai_usage(usage_obj)
     cost = calculate_cost(executed_model, usage)
@@ -173,6 +195,14 @@ def _record_openai_result(
 
     # Record optimistic local spend immediately so subsequent concurrent calls enforce caps
     pulse._client.policy_store.record_local_spend(tenant_id, cost)
+
+    safe_prompt = pulse.redact_text(prompt_str)[:500] or "(no prompt captured)"
+    safe_content = pulse.redact_text(content_preview, placeholder="[redacted]")[:300]
+    step_detail = (
+        "[redacted: metadata-only mode]"
+        if not pulse.capture_prompts
+        else f"Prompt: {safe_prompt[:120]}\nResponse: {safe_content[:120]}"
+    )
 
     if ctx:
         if not ctx.state.original_model:
@@ -190,10 +220,10 @@ def _record_openai_result(
             reasoning_tokens=usage.reasoning_tokens,
             cost_usd=cost,
             saved_cost_usd=savings,
-            tool_call_str=f"chat.completions.create(model='{executed_model}')",
+            tool_call_str=f"{api_label}(model='{executed_model}')",
             step_type="degrade" if was_degraded else "tool",
             title=f"OpenAI ({executed_model})" + (" [Degraded]" if was_degraded else ""),
-            content=f"Prompt: {prompt_str[:120]}\nResponse: {content_preview[:120]}",
+            content=step_detail,
             tenant_id=tenant_id,
         )
         # Ensure next hop checks soft cap cleanly
@@ -212,11 +242,11 @@ def _record_openai_result(
             executed_model=executed_model,
             was_degraded=was_degraded,
         )
-        state.add_step(step_type="thought", title="User Prompt", content=prompt_str)
+        state.add_step(step_type="thought", title="User Prompt", content=safe_prompt)
         state.add_step(
             step_type="degrade" if was_degraded else "final",
             title=f"OpenAI Response ({executed_model})" + (" [Degraded]" if was_degraded else ""),
-            content=content_preview,
+            content=safe_content,
         )
         # Skip duplicate local spend increment since we recorded it above
         status = "DEGRADED" if was_degraded else "COMPLETED"
@@ -226,7 +256,7 @@ def _record_openai_result(
             "original_model": requested_model,
             "executed_model": executed_model,
             "was_degraded": was_degraded,
-            "prompt": prompt_str[:500] or "(no prompt captured)",
+            "prompt": safe_prompt,
             "status": status,
             "input_tokens": state.input_tokens,
             "cached_input_tokens": state.cached_input_tokens,
@@ -254,6 +284,16 @@ def _extract_chunk_delta_and_usage(chunk: Any, current_usage: Any, chunks_text: 
     usage = getattr(chunk, "usage", None)
     if usage is not None:
         current_usage = usage
+    ev_type = getattr(chunk, "type", None)
+    if ev_type == "response.completed":
+        resp_obj = getattr(chunk, "response", None)
+        resp_usage = getattr(resp_obj, "usage", None) if resp_obj is not None else None
+        if resp_usage is not None:
+            current_usage = resp_usage
+    elif ev_type == "response.output_text.delta":
+        delta_txt = getattr(chunk, "delta", None)
+        if delta_txt and sum(len(x) for x in chunks_text) < 300:
+            chunks_text.append(delta_txt)
     choices = getattr(chunk, "choices", None)
     if choices and len(choices) > 0:
         delta = getattr(choices[0], "delta", None)
@@ -327,6 +367,7 @@ class _SyncOpenAIStream:
                 usage_obj=self._usage,
                 latency_ms=latency_ms,
                 ctx=self._meta["ctx"],
+                api_label=self._meta.get("api_label", "chat.completions.create"),
             )
         except CircuitBreakerException:
             raise
@@ -401,6 +442,7 @@ class _AsyncOpenAIStream:
                 usage_obj=self._usage,
                 latency_ms=latency_ms,
                 ctx=self._meta["ctx"],
+                api_label=self._meta.get("api_label", "chat.completions.create"),
             )
         except CircuitBreakerException:
             raise
@@ -422,6 +464,164 @@ def _is_async_client(client: Any, method: Any) -> bool:
     return any("async" in cls.__name__.lower() for cls in type(client).__mro__)
 
 
+def _patch_openai_endpoint(
+    client: Any,
+    resource: Any,
+    pulse: Brenducate,
+    agent_id: str,
+    default_tenant: Optional[str],
+    breaker: CircuitBreaker,
+    inject_stream_usage: bool,
+    api_label: str,
+) -> None:
+    """Wrap `resource.create` (sync or async) for Chat Completions or Responses API."""
+    orig_create = getattr(resource, "create", None)
+    if orig_create is None:
+        return
+    is_async = _is_async_client(client, orig_create)
+
+    if is_async:
+        @functools.wraps(orig_create)
+        async def wrapped_async_create(*args, **kwargs):
+            start_time = time.monotonic()
+            try:
+                prep = _prepare_openai_call(
+                    pulse, breaker, default_tenant, args, kwargs, inject_stream_usage=inject_stream_usage
+                )
+            except CircuitBreakerException:
+                raise
+            except Exception:
+                return await orig_create(*args, **kwargs)
+
+            call_kwargs, tid, req_model, exec_model, degraded, prompt_str, ctx = prep
+
+            try:
+                response = await orig_create(*args, **call_kwargs)
+            except Exception as e:
+                if ctx:
+                    try:
+                        ctx.state.add_step(
+                            step_type="guardrail",
+                            title=f"OpenAI Error ({exec_model})",
+                            content=str(e),
+                        )
+                    except Exception:
+                        pass
+                raise
+
+            if call_kwargs.get("stream"):
+                return _AsyncOpenAIStream(
+                    response,
+                    {
+                        "pulse": pulse,
+                        "agent_id": agent_id,
+                        "tenant_id": tid,
+                        "requested_model": req_model,
+                        "executed_model": exec_model,
+                        "was_degraded": degraded,
+                        "prompt_str": prompt_str,
+                        "ctx": ctx,
+                        "start_time": start_time,
+                        "api_label": api_label,
+                    },
+                )
+
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+            content_preview = _extract_response_preview(response)
+            try:
+                _record_openai_result(
+                    pulse,
+                    agent_id,
+                    tid,
+                    req_model,
+                    exec_model,
+                    degraded,
+                    prompt_str,
+                    content_preview,
+                    getattr(response, "usage", None),
+                    latency_ms,
+                    ctx,
+                    api_label=api_label,
+                )
+            except CircuitBreakerException:
+                raise
+            except Exception:
+                pass
+            return response
+
+        resource.create = wrapped_async_create
+    else:
+        @functools.wraps(orig_create)
+        def wrapped_sync_create(*args, **kwargs):
+            start_time = time.monotonic()
+            try:
+                prep = _prepare_openai_call(
+                    pulse, breaker, default_tenant, args, kwargs, inject_stream_usage=inject_stream_usage
+                )
+            except CircuitBreakerException:
+                raise
+            except Exception:
+                return orig_create(*args, **kwargs)
+
+            call_kwargs, tid, req_model, exec_model, degraded, prompt_str, ctx = prep
+
+            try:
+                response = orig_create(*args, **call_kwargs)
+            except Exception as e:
+                if ctx:
+                    try:
+                        ctx.state.add_step(
+                            step_type="guardrail",
+                            title=f"OpenAI Error ({exec_model})",
+                            content=str(e),
+                        )
+                    except Exception:
+                        pass
+                raise
+
+            if call_kwargs.get("stream"):
+                return _SyncOpenAIStream(
+                    response,
+                    {
+                        "pulse": pulse,
+                        "agent_id": agent_id,
+                        "tenant_id": tid,
+                        "requested_model": req_model,
+                        "executed_model": exec_model,
+                        "was_degraded": degraded,
+                        "prompt_str": prompt_str,
+                        "ctx": ctx,
+                        "start_time": start_time,
+                        "api_label": api_label,
+                    },
+                )
+
+            latency_ms = int((time.monotonic() - start_time) * 1000)
+            content_preview = _extract_response_preview(response)
+            try:
+                _record_openai_result(
+                    pulse,
+                    agent_id,
+                    tid,
+                    req_model,
+                    exec_model,
+                    degraded,
+                    prompt_str,
+                    content_preview,
+                    getattr(response, "usage", None),
+                    latency_ms,
+                    ctx,
+                    api_label=api_label,
+                )
+            except CircuitBreakerException:
+                raise
+            except Exception:
+                pass
+            return response
+
+        resource.create = wrapped_sync_create
+
+
 def wrap_openai(
     client: Any,
     pulse: Optional[Brenducate] = None,
@@ -431,157 +631,39 @@ def wrap_openai(
 ) -> Any:
     """
     Wrap an OpenAI or AsyncOpenAI client with 1-line Per-Tenant Margin Guardrails.
-    Fail-open on SDK errors; automatically injects `stream_options={"include_usage": True}`.
+    Supports both `chat.completions.create` and `responses.create` (sync & async).
+    Fail-open on SDK errors; auto-injects `stream_options={"include_usage": True}` on chat streams.
     """
     if pulse is None:
         pulse = Brenducate(
             api_key=os.getenv("BRENDUCATE_API_KEY", "br_live_demo_key_00001"),
-            base_url=os.getenv("BRENDUCATE_BASE_URL", "https://brenducate.com"),
+            base_url=os.getenv("BRENDUCATE_BASE_URL", "https://www.brenducate.com"),
         )
 
     breaker = circuit_breaker or CircuitBreaker()
 
     if hasattr(client, "chat") and hasattr(client.chat, "completions"):
-        orig_create = client.chat.completions.create
-        is_async = _is_async_client(client, orig_create)
+        _patch_openai_endpoint(
+            client=client,
+            resource=client.chat.completions,
+            pulse=pulse,
+            agent_id=agent_id,
+            default_tenant=tenant_id,
+            breaker=breaker,
+            inject_stream_usage=True,
+            api_label="chat.completions.create",
+        )
 
-        if is_async:
-            @functools.wraps(orig_create)
-            async def wrapped_async_create(*args, **kwargs):
-                start_time = time.monotonic()
-                try:
-                    prep = _prepare_openai_call(pulse, breaker, tenant_id, args, kwargs)
-                except CircuitBreakerException:
-                    raise
-                except Exception:
-                    return await orig_create(*args, **kwargs)
-
-                call_kwargs, tid, req_model, exec_model, degraded, prompt_str, ctx = prep
-
-                try:
-                    response = await orig_create(*args, **call_kwargs)
-                except Exception as e:
-                    if ctx:
-                        try:
-                            ctx.state.add_step(
-                                step_type="guardrail",
-                                title=f"OpenAI Error ({exec_model})",
-                                content=str(e),
-                            )
-                        except Exception:
-                            pass
-                    raise
-
-                if call_kwargs.get("stream"):
-                    return _AsyncOpenAIStream(
-                        response,
-                        {
-                            "pulse": pulse,
-                            "agent_id": agent_id,
-                            "tenant_id": tid,
-                            "requested_model": req_model,
-                            "executed_model": exec_model,
-                            "was_degraded": degraded,
-                            "prompt_str": prompt_str,
-                            "ctx": ctx,
-                            "start_time": start_time,
-                        },
-                    )
-
-                latency_ms = int((time.monotonic() - start_time) * 1000)
-                content_preview = ""
-                if hasattr(response, "choices") and response.choices:
-                    msg = getattr(response.choices[0], "message", None)
-                    content_preview = (getattr(msg, "content", None) or "") if msg else ""
-                try:
-                    _record_openai_result(
-                        pulse,
-                        agent_id,
-                        tid,
-                        req_model,
-                        exec_model,
-                        degraded,
-                        prompt_str,
-                        content_preview,
-                        getattr(response, "usage", None),
-                        latency_ms,
-                        ctx,
-                    )
-                except CircuitBreakerException:
-                    raise
-                except Exception:
-                    pass
-                return response
-
-            client.chat.completions.create = wrapped_async_create
-        else:
-            @functools.wraps(orig_create)
-            def wrapped_sync_create(*args, **kwargs):
-                start_time = time.monotonic()
-                try:
-                    prep = _prepare_openai_call(pulse, breaker, tenant_id, args, kwargs)
-                except CircuitBreakerException:
-                    raise
-                except Exception:
-                    return orig_create(*args, **kwargs)
-
-                call_kwargs, tid, req_model, exec_model, degraded, prompt_str, ctx = prep
-
-                try:
-                    response = orig_create(*args, **call_kwargs)
-                except Exception as e:
-                    if ctx:
-                        try:
-                            ctx.state.add_step(
-                                step_type="guardrail",
-                                title=f"OpenAI Error ({exec_model})",
-                                content=str(e),
-                            )
-                        except Exception:
-                            pass
-                    raise
-
-                if call_kwargs.get("stream"):
-                    return _SyncOpenAIStream(
-                        response,
-                        {
-                            "pulse": pulse,
-                            "agent_id": agent_id,
-                            "tenant_id": tid,
-                            "requested_model": req_model,
-                            "executed_model": exec_model,
-                            "was_degraded": degraded,
-                            "prompt_str": prompt_str,
-                            "ctx": ctx,
-                            "start_time": start_time,
-                        },
-                    )
-
-                latency_ms = int((time.monotonic() - start_time) * 1000)
-                content_preview = ""
-                if hasattr(response, "choices") and response.choices:
-                    msg = getattr(response.choices[0], "message", None)
-                    content_preview = (getattr(msg, "content", None) or "") if msg else ""
-                try:
-                    _record_openai_result(
-                        pulse,
-                        agent_id,
-                        tid,
-                        req_model,
-                        exec_model,
-                        degraded,
-                        prompt_str,
-                        content_preview,
-                        getattr(response, "usage", None),
-                        latency_ms,
-                        ctx,
-                    )
-                except CircuitBreakerException:
-                    raise
-                except Exception:
-                    pass
-                return response
-
-            client.chat.completions.create = wrapped_sync_create
+    if hasattr(client, "responses"):
+        _patch_openai_endpoint(
+            client=client,
+            resource=client.responses,
+            pulse=pulse,
+            agent_id=agent_id,
+            default_tenant=tenant_id,
+            breaker=breaker,
+            inject_stream_usage=False,
+            api_label="responses.create",
+        )
 
     return client

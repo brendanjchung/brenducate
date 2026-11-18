@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
+from .circuit_breaker import CircuitBreaker
 from .pricing import resolve_step_down_model
 
 
@@ -96,6 +97,54 @@ class PolicyStore:
 
         return ("allow", requested_model, None)
 
+    def resolve_breaker(self, base: Optional[CircuitBreaker] = None) -> CircuitBreaker:
+        """
+        Merge synced dashboard per-run guardrails with any explicit local overrides
+        passed to `CircuitBreaker(...)` in Python code.
+        """
+        src = base or CircuitBreaker()
+        explicit = getattr(src, "_explicit", set())
+        with self._lock:
+            policy = dict(self.policy)
+
+        if not policy:
+            return src
+
+        synced_map = policy.get("model_fallback_map") or None
+        merged_map = None
+        if synced_map or src.fallback_map:
+            merged_map = {**(synced_map or {}), **(src.fallback_map or {})}
+
+        resolved = CircuitBreaker(
+            max_hops=(
+                src.max_hops
+                if "max_hops" in explicit
+                else int(policy.get("max_hops", src.max_hops))
+            ),
+            max_cost_usd=(
+                src.max_cost_usd
+                if "max_cost_usd" in explicit
+                else float(policy.get("max_run_cost_usd", src.max_cost_usd))
+            ),
+            degrade_after_cost_usd=(
+                src.degrade_after_cost_usd
+                if "degrade_after_cost_usd" in explicit
+                else policy.get("degrade_after_run_cost_usd", src.degrade_after_cost_usd)
+            ),
+            kill_on_infinite_loop=(
+                src.kill_on_infinite_loop
+                if "kill_on_infinite_loop" in explicit
+                else bool(policy.get("kill_on_infinite_loop", src.kill_on_infinite_loop))
+            ),
+            max_duplicate_calls=(
+                src.max_duplicate_calls
+                if "max_duplicate_calls" in explicit
+                else int(policy.get("max_duplicate_calls", src.max_duplicate_calls))
+            ),
+            fallback_map=merged_map,
+        )
+        return resolved
+
 
 def _atexit_flush(client_ref: "weakref.ref[BrenducateClient]") -> None:
     client = client_ref()
@@ -132,7 +181,7 @@ class BrenducateClient:
         self._headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "brenducate-sdk/0.2.0",
+            "User-Agent": "brenducate-sdk/0.2.1",
         }
         self._queue: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=max_queue_size)
         self._stop_event = threading.Event()

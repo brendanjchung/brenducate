@@ -7,7 +7,9 @@ hard limit or infinite tool loop threshold is breached.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+
+_UNSET = object()
 
 from .pricing import (
     TokenUsage,
@@ -41,19 +43,13 @@ class TenantBudgetExceeded(CircuitBreakerException):
     """Raised when an end-customer tenant breaches its daily or hard spend cap."""
 
 
-@dataclass
+@dataclass(init=False)
 class CircuitBreaker:
     """
     In-process guardrail policy for per-run and per-tenant budget protection.
 
-    Args:
-        max_hops:               Abort run if steps exceed this count.
-        max_cost_usd:           Hard cap per run — abort if exceeded.
-        degrade_after_cost_usd: Soft cap per run — step down to cheaper same-family
-                                model once exceeded (sticky for remainder of run).
-        kill_on_infinite_loop:  Abort if the exact same tool call repeats consecutively.
-        max_duplicate_calls:    Allowed identical repeats before halting (default: 2).
-        fallback_map:           Optional custom model -> cheaper_model overrides.
+    Any field left unset dynamically syncs with your Brenducate dashboard policy.
+    Explicitly passed arguments override the synced dashboard policy for this agent.
     """
 
     max_hops: int = 12
@@ -62,6 +58,57 @@ class CircuitBreaker:
     kill_on_infinite_loop: bool = True
     max_duplicate_calls: int = 2
     fallback_map: Optional[Dict[str, str]] = None
+    _explicit: Set[str] = field(default_factory=set, repr=False, compare=False)
+
+    def __init__(
+        self,
+        max_hops: Any = _UNSET,
+        max_cost_usd: Any = _UNSET,
+        degrade_after_cost_usd: Any = _UNSET,
+        kill_on_infinite_loop: Any = _UNSET,
+        max_duplicate_calls: Any = _UNSET,
+        fallback_map: Any = _UNSET,
+    ) -> None:
+        explicit: Set[str] = set()
+        if max_hops is not _UNSET:
+            self.max_hops = int(max_hops)
+            explicit.add("max_hops")
+        else:
+            self.max_hops = 12
+
+        if max_cost_usd is not _UNSET:
+            self.max_cost_usd = float(max_cost_usd)
+            explicit.add("max_cost_usd")
+        else:
+            self.max_cost_usd = 1.50
+
+        if degrade_after_cost_usd is not _UNSET:
+            self.degrade_after_cost_usd = (
+                None if degrade_after_cost_usd is None else float(degrade_after_cost_usd)
+            )
+            explicit.add("degrade_after_cost_usd")
+        else:
+            self.degrade_after_cost_usd = 0.25
+
+        if kill_on_infinite_loop is not _UNSET:
+            self.kill_on_infinite_loop = bool(kill_on_infinite_loop)
+            explicit.add("kill_on_infinite_loop")
+        else:
+            self.kill_on_infinite_loop = True
+
+        if max_duplicate_calls is not _UNSET:
+            self.max_duplicate_calls = int(max_duplicate_calls)
+            explicit.add("max_duplicate_calls")
+        else:
+            self.max_duplicate_calls = 2
+
+        if fallback_map is not _UNSET:
+            self.fallback_map = dict(fallback_map) if fallback_map is not None else None
+            explicit.add("fallback_map")
+        else:
+            self.fallback_map = None
+
+        self._explicit = explicit
 
 
 @dataclass

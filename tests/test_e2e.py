@@ -783,6 +783,179 @@ class TestBrenducateE2E(unittest.TestCase):
             self.assertGreater(t["cost_usd"], 0)
         sentinel._client.stop()
 
+    def test_08_dashboard_policy_sync_and_privacy_metadata_only(self):
+        """
+        Verify:
+          1. Saving Per-Run Soft Cap in dashboard syncs dynamically into CircuitBreaker()
+             while explicit kwargs passed in Python stay locked.
+          2. `capture_prompts=False` strips prompt/response text while keeping accurate cost math.
+        """
+        signup = self.client.post(
+            "/v1/auth/signup",
+            json={
+                "team_name": "PrivacySync Labs",
+                "email": "privacy@sync.io",
+                "password": "password123",
+            },
+        ).json()
+        headers = {"Authorization": f"Bearer {signup['session_token']}"}
+
+        # Lower per-run soft cap in dashboard from $0.25 -> $0.01
+        put_res = self.client.put(
+            "/v1/policies",
+            headers=headers,
+            json={
+                "degrade_after_run_cost_usd": 0.01,
+                "max_run_cost_usd": 3.00,
+                "tenant_daily_degrade_usd": 20.0,
+                "tenant_daily_cap_usd": 50.0,
+                "max_hops": 9,
+                "kill_on_infinite_loop": True,
+                "max_duplicate_calls": 2,
+                "model_fallback_map": {"gpt-5": "gpt-5-mini"},
+            },
+        )
+        self.assertEqual(put_res.status_code, 200)
+
+        sentinel = self._make_sdk_bound_to_testclient(signup["api_key"])
+        sentinel.capture_prompts = False
+        sentinel._client.sync_policies_now()
+
+        # Default CircuitBreaker() adopts dashboard $0.01 soft cap & 9 hops
+        resolved_default = sentinel._client.policy_store.resolve_breaker(CircuitBreaker())
+        self.assertEqual(resolved_default.degrade_after_cost_usd, 0.01)
+        self.assertEqual(resolved_default.max_hops, 9)
+
+        # Explicit override keeps caller's max_cost_usd=0.75 while inheriting synced soft cap
+        resolved_custom = sentinel._client.policy_store.resolve_breaker(CircuitBreaker(max_cost_usd=0.75))
+        self.assertEqual(resolved_custom.max_cost_usd, 0.75)
+        self.assertEqual(resolved_custom.degrade_after_cost_usd, 0.01)
+
+        mock_oai = MockOpenAIClient()
+        client = wrap_openai(mock_oai, pulse=sentinel, agent_id="privacy-agent")
+
+        with sentinel.trace(agent_id="privacy-agent", model="gpt-5", tenant_id="pii_bank"):
+            client.chat.completions.create(
+                model="gpt-5",
+                messages=[{"role": "user", "content": "SECRET SSN 123-45-6789 prompt"}],
+            )
+            client.chat.completions.create(
+                model="gpt-5",
+                messages=[{"role": "user", "content": "Second step after >$0.01 cost"}],
+            )
+
+        # Second call inside run stepped down dynamically to gpt-5-mini from dashboard policy!
+        self.assertEqual(mock_oai.chat.completions.calls[0]["model"], "gpt-5")
+        self.assertEqual(mock_oai.chat.completions.calls[1]["model"], "gpt-5-mini")
+
+        sentinel.flush(timeout=2.0)
+        traces = self.client.get(
+            "/v1/telemetry/traces?tenant_id=pii_bank",
+            headers={"Authorization": f"Bearer {signup['api_key']}"},
+        ).json()
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0]["status"], "DEGRADED")
+        self.assertNotIn("123-45-6789", traces[0]["prompt"])
+        self.assertIn("redacted", traces[0]["prompt"].lower())
+        sentinel._client.stop()
+
+    def test_09_openai_responses_api_demo_lock_and_payment_webhook(self):
+        """
+        Verify:
+          1. wrap_openai handles `client.responses.create` (no stream_options injection on Responses API).
+          2. Demo Sandbox is blocked from modifying Slack webhooks or global policies (403).
+          3. Stripe webhook resolves buyer email via `customer_details.email` + `amount_total` for Payment Links.
+        """
+        signup = self.client.post(
+            "/v1/auth/signup",
+            json={
+                "team_name": "Responses Buyer",
+                "email": "buyer@responses.ai",
+                "password": "password123",
+            },
+        ).json()
+
+        class MockResponses:
+            def __init__(self):
+                self.calls = []
+
+            def create(self, *args, **kwargs):
+                self.calls.append(dict(kwargs))
+                return _Obj(
+                    output_text="Responses API summary",
+                    usage=_Obj(
+                        input_tokens=4000,
+                        input_tokens_details=_Obj(cached_tokens=1000),
+                        output_tokens=500,
+                        output_tokens_details=_Obj(reasoning_tokens=100),
+                    ),
+                )
+
+        class MockResponsesClient:
+            def __init__(self):
+                self.chat = _Obj(completions=MockOpenAICompletions())
+                self.responses = MockResponses()
+
+        sentinel = self._make_sdk_bound_to_testclient(signup["api_key"])
+        raw_client = MockResponsesClient()
+        wrapped = wrap_openai(raw_client, pulse=sentinel, agent_id="resp-bot")
+
+        with sentinel.tenant("resp_tenant"):
+            out = wrapped.responses.create(model="gpt-4.1", input="Summarize telemetry compliance")
+            self.assertEqual(out.output_text, "Responses API summary")
+
+        self.assertNotIn("stream_options", raw_client.responses.calls[0])
+        sentinel.flush(timeout=2.0)
+
+        traces = self.client.get(
+            "/v1/telemetry/traces?tenant_id=resp_tenant",
+            headers={"Authorization": f"Bearer {signup['api_key']}"},
+        ).json()
+        self.assertEqual(len(traces), 1)
+        self.assertEqual(traces[0]["input_tokens"], 3000)       # 4000 - 1000 cached
+        self.assertEqual(traces[0]["cached_input_tokens"], 1000)
+        self.assertEqual(traces[0]["output_tokens"], 500)
+        self.assertEqual(traces[0]["reasoning_tokens"], 100)
+
+        # Shared Demo Sandbox lock check
+        demo_headers = {"Authorization": "Bearer br_live_demo_key_00001"}
+        r_hook = self.client.patch(
+            "/v1/auth/webhook",
+            headers=demo_headers,
+            json={"slack_webhook_url": "https://evil.example/hook"},
+        )
+        self.assertEqual(r_hook.status_code, 403)
+        r_pol = self.client.put(
+            "/v1/policies",
+            headers=demo_headers,
+            json={"degrade_after_run_cost_usd": 0.01, "max_run_cost_usd": 0.02},
+        )
+        self.assertEqual(r_pol.status_code, 403)
+
+        # Stripe Payment Link style webhook (email inside customer_details + amount_total=$299 -> scale)
+        wh = self.client.post(
+            "/v1/billing/webhook",
+            json={
+                "type": "checkout.session.completed",
+                "data": {
+                    "object": {
+                        "customer": "cus_pl_test",
+                        "subscription": "sub_pl_test",
+                        "amount_total": 29900,
+                        "customer_details": {"email": "buyer@responses.ai"},
+                        "metadata": {},
+                    }
+                },
+            },
+        )
+        self.assertEqual(wh.status_code, 200)
+        me = self.client.get(
+            "/v1/auth/me",
+            headers={"Authorization": f"Bearer {signup['session_token']}"},
+        ).json()
+        self.assertEqual(me["plan"], "scale")
+        sentinel._client.stop()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

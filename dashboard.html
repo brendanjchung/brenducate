@@ -97,8 +97,11 @@
     <!-- Quickstart Bar (shows live test button + newly issued key if just created) -->
     <section class="quickstart-banner" aria-label="Quick integration bar">
       <div>
-        <strong style="display: block; font-size: 0.9375rem;" id="quickstartTitle">Workspace ready for telemetry</strong>
-        <span class="subtle-text" id="quickstartSub">Send a simulated multi-tenant agent run to see Smart Degradation &amp; tenant caps update in real time.</span>
+        <div style="display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap;">
+          <strong style="font-size: 0.9375rem;" id="quickstartTitle">Workspace ready for telemetry</strong>
+          <span class="badge badge-neutral" id="telemetryStatusPill">Waiting for telemetry</span>
+        </div>
+        <span class="subtle-text" id="quickstartSub">Install <code>brenducate-sdk</code> or click Simulate Degraded Run to see live caps &amp; Smart Degradation update.</span>
       </div>
       <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;">
         <code class="quickstart-key" id="keyDisplayChip">br_live_...</code>
@@ -324,6 +327,11 @@
     </section>
 
   </main>
+
+  <footer class="container" style="padding: 1.5rem var(--gutter) 2.5rem; border-top: 1px solid var(--line); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; color: var(--ink-3); font-size: 0.8125rem;">
+    <span>© 2026 Brenducate · brendan@brenducate.com</span>
+    <span><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></span>
+  </footer>
 
   <!-- TRACE DETAIL DIALOG (modern-web-guidance: light-dismiss-a-dialog) -->
   <dialog id="traceDialog" closedby="any" aria-labelledby="traceDialogTitle">

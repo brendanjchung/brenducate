@@ -201,7 +201,10 @@ function renderProfile() {
 from openai import OpenAI
 from brenducate import Brenducate, CircuitBreaker, wrap_openai
 
-sentinel = Brenducate(api_key="${keyPlaceholder}")
+sentinel = Brenducate(
+    api_key="${keyPlaceholder}",
+    # capture_prompts=False,  # Uncomment for metadata-only privacy mode
+)
 client = wrap_openai(
     OpenAI(),
     pulse=sentinel,
@@ -264,6 +267,12 @@ function statusBadge(st) {
 }
 
 function renderMargins(m) {
+  const pill = document.getElementById('telemetryStatusPill');
+  if (pill) {
+    const active = Number(m.total_runs_24h || 0) > 0 || Number(m.total_spend_30d_usd || 0) > 0;
+    pill.className = `badge ${active ? 'badge-ok' : 'badge-neutral'}`;
+    pill.textContent = active ? '✓ Telemetry Active' : 'Waiting for first SDK trace';
+  }
   document.getElementById('kpiSaved30d').textContent = fmtUsd(m.net_margin_saved_30d_usd);
   document.getElementById('kpiSpend24h').textContent = fmtUsd(m.total_spend_24h_usd);
   document.getElementById('kpiSpend30dSub').textContent = `${fmtUsd(m.total_spend_30d_usd)} spent in last 30 days`;

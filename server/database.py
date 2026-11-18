@@ -27,11 +27,16 @@ from auth_utils import hash_api_key, get_api_key_prefix
 
 DEFAULT_MODEL_FALLBACK_MAP = {
     # Anthropic same-family step-downs (preserves Anthropic client & cache_control structure)
+    "claude-opus-4-5": "claude-sonnet-4-5-20250929",
     "claude-opus-4": "claude-sonnet-4-20250514",
+    "claude-sonnet-4-5": "claude-haiku-4-5-20251001",
     "claude-sonnet-4": "claude-3-5-haiku-latest",
     "claude-3-7-sonnet": "claude-3-5-haiku-latest",
     "claude-3-5-sonnet": "claude-3-5-haiku-latest",
     # OpenAI same-family step-downs (preserves OpenAI client & schema formatting)
+    "gpt-5.4": "gpt-5-mini",
+    "gpt-5": "gpt-5-mini",
+    "gpt-5-mini": "gpt-5-nano",
     "gpt-4.1": "gpt-4.1-mini",
     "gpt-4o": "gpt-4o-mini",
     "o1": "o3-mini",

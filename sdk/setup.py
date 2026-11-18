@@ -9,7 +9,7 @@ if os.path.exists(readme_path):
 
 setup(
     name="brenducate-sdk",
-    version="0.2.0",
+    version="0.2.1",
     description="Per-tenant margin guardrails, same-family Smart Degradation, and sub-millisecond loop interception for OpenAI and Anthropic.",
     long_description=long_description,
     long_description_content_type="text/markdown",

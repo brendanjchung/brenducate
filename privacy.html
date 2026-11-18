@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Brenducate</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .legal-main { max-width: 46rem; margin-inline: auto; padding: 4rem var(--gutter) 5rem; }
+    .legal-main h1 { font-size: clamp(2rem, 1.5rem + 2vw, 2.75rem); margin-bottom: 0.75rem; }
+    .legal-main .lead { color: var(--ink-2); font-size: 1.0625rem; margin-bottom: 2.5rem; }
+    .legal-main article { display: flex; flex-direction: column; gap: 1.5rem; line-height: 1.65; color: var(--ink-2); }
+    .legal-main section { border-top: 1px solid var(--line); padding-top: 1.5rem; }
+    .legal-main h2 { font-family: var(--serif); font-size: 1.375rem; font-weight: 400; color: var(--ink); margin-bottom: 0.625rem; }
+    .legal-main ul { margin-left: 1.25rem; margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.375rem; }
+    .legal-main code { font-family: var(--mono); font-size: 0.875em; background: var(--subtle); padding: 0.0625rem 0.3125rem; border-radius: 4px; color: var(--ink); }
+    .legal-footer { border-top: 1px solid var(--line); padding: 2rem 0 3rem; color: var(--ink-3); font-size: 0.8125rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="container nav-inner">
+      <a href="index.html" class="wordmark"><span class="mark" aria-hidden="true"></span>Brenducate</a>
+      <div class="nav-actions">
+        <a href="dashboard.html" class="btn btn-sm btn-ghost">Dashboard</a>
+        <a href="index.html" class="btn btn-sm btn-secondary">← Back to home</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="legal-main">
+    <h1 class="serif-title">Privacy Policy</h1>
+    <p class="lead">Effective November 17, 2026 · Plain-English privacy terms for Brenducate's SDK and cloud ledger.</p>
+
+    <article>
+      <section>
+        <h2>1. Zero Access to Your LLM Provider Keys</h2>
+        <p>The Brenducate Python SDK executes in-process inside your own application servers. Your OpenAI and Anthropic API keys stay in your environment and are never transmitted to Brenducate.</p>
+      </section>
+
+      <section>
+        <h2>2. Metadata-Only Mode &amp; Telemetry Content</h2>
+        <p>When instrumenting runs, the SDK logs model identifiers, token breakdowns (uncached, cached reads, cache writes, reasoning, output), calculated USD spend, latency, and end-customer identifiers (<code>tenant_id</code>).</p>
+        <p style="margin-top: 0.5rem;">By default, truncated prompt previews (up to 500 characters) are captured to help debug agent steps. To enforce strict metadata-only telemetry where zero prompt or response text leaves your servers, initialize the SDK with <code>Brenducate(capture_prompts=False)</code> or set <code>BRENDUCATE_CAPTURE_PROMPTS=false</code>.</p>
+      </section>
+
+      <section>
+        <h2>3. How We Store &amp; Use Data</h2>
+        <ul>
+          <li>Telemetry and workspace accounts are stored in managed PostgreSQL (Neon) and served via Vercel serverless infrastructure.</li>
+          <li><strong>No model training:</strong> Brenducate never trains foundation models or sells customer telemetry data.</li>
+          <li>Payment processing is handled exclusively by Stripe; we never store raw credit card numbers.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Deletion &amp; Contact</h2>
+        <p>To export or delete your workspace records, email <a href="mailto:brendan@brenducate.com" style="text-decoration:underline; color:var(--ink);">brendan@brenducate.com</a>.</p>
+      </section>
+    </article>
+  </main>
+
+  <footer class="container legal-footer">
+    <span>© 2026 Brenducate</span>
+    <span><a href="terms.html">Terms of Service</a> · <a href="index.html">Home</a></span>
+  </footer>
+</body>
+</html>

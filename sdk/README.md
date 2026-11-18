@@ -2,9 +2,10 @@
 
 Lightweight, open-source **Per-Tenant Margin Guardrails**, **Same-Family Smart Degradation**, and **Sub-Millisecond Loop Interception** for **OpenAI** and **Anthropic** (`OpenAI`, `AsyncOpenAI`, `Anthropic`, `AsyncAnthropic`).
 
-- **Zero critical-path network latency (`<1ms`):** All run caps, loop detection, and tenant spend checks run in-process against locally cached policy state.
-- **Same-Family Smart Degradation:** When a run or end-customer crosses your soft budget threshold, calls automatically step down within the same provider family (`claude-sonnet-4` → `claude-3-5-haiku-latest`, `gpt-4o` → `gpt-4o-mini`) and stay sticky per run to preserve prompt cache hits.
-- **Exact Streaming & Prompt Cache Math:** Automatically injects `stream_options={"include_usage": True}` on OpenAI streams and tracks cached reads, cache writes, and reasoning tokens accurately.
+- **Zero critical-path network latency (`<1ms`):** All run caps, loop detection, and tenant spend checks run in-process against synced dashboard policies.
+- **Same-Family Smart Degradation:** When a run or end-customer crosses your soft budget threshold, calls automatically step down within the same provider family (`claude-sonnet-4` → `claude-3-5-haiku-latest`, `gpt-4o` → `gpt-4o-mini`, `gpt-5` → `gpt-5-mini`) and stay sticky per run to preserve prompt cache hits.
+- **Exact Streaming & Prompt Cache Math:** Supports OpenAI `chat.completions` and `responses.create` (auto-injecting `stream_options={"include_usage": True}` on chat streams) plus Anthropic `.create()` & `.stream()`, accurately separating cached reads, cache writes, and reasoning tokens.
+- **Metadata-Only Privacy Option (`capture_prompts=False`):** Strip prompt and response bodies before telemetry leaves your box—reporting only token counts, model names, latency, and USD spend.
 - **Serverless Safe & Fail-Open:** Background queue flushes cleanly via `flush()` / `await aflush()` and `atexit` hooks for AWS Lambda & Modal. SDK internal errors never block LLM calls.
 
 ## Install
