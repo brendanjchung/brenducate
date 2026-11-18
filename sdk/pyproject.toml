@@ -22,7 +22,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://www.brenducate.com"
-Source = "https://github.com/brendanjchung/agentpulse"
+Source = "https://github.com/brendanjchung/brenducate"
 
 [tool.setuptools.packages.find]
 where = ["."]
